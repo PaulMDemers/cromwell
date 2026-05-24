@@ -258,7 +258,7 @@ int BootIdeWriteAtapiData(unsigned uIoBase, void * buf, size_t size)
 
 /* -------------------------------------------------------------------------------- */
 
-int BootIdeIssueAtapiPacketCommandAndPacket(int nDriveIndex, u8 *pAtapiCommandPacket12Bytes)
+int BootIdeIssueAtapiPacketCommandAndPacketLimit(int nDriveIndex, u8 *pAtapiCommandPacket12Bytes, u16 byteCountLimit)
 {
 	tsIdeCommandParams tsicp = IDE_DEFAULT_COMMAND;
 	unsigned 	uIoBase = tsaHarddiskInfo[nDriveIndex].m_fwPortBase;
@@ -266,7 +266,7 @@ int BootIdeIssueAtapiPacketCommandAndPacket(int nDriveIndex, u8 *pAtapiCommandPa
 	tsicp.m_bDrivehead = IDE_DH_DEFAULT | IDE_DH_HEAD(0) | IDE_DH_CHS | IDE_DH_DRIVE(nDriveIndex);
 	IoOutputByte(IDE_REG_DRIVEHEAD(uIoBase), tsicp.m_bDrivehead);
 
-	tsicp.m_wCylinder=2048;
+	tsicp.m_wCylinder=byteCountLimit;
 	BootIdeWaitNotBusy(uIoBase);
 	if(BootIdeIssueAtaCommand(uIoBase, IDE_CMD_ATAPI_PACKET, &tsicp))
 	{
@@ -301,6 +301,11 @@ int BootIdeIssueAtapiPacketCommandAndPacket(int nDriveIndex, u8 *pAtapiCommandPa
 		}
 	}
 	return 0;
+}
+
+int BootIdeIssueAtapiPacketCommandAndPacket(int nDriveIndex, u8 *pAtapiCommandPacket12Bytes)
+{
+	return BootIdeIssueAtapiPacketCommandAndPacketLimit(nDriveIndex, pAtapiCommandPacket12Bytes, 2048);
 }
 
 
@@ -837,6 +842,9 @@ int BootIdeReadSector(int nDriveIndex, void * pbBuffer, unsigned int block, int 
                	// CD - DVD ROM
 		u8 ba[12];
 		int nReturn;
+		int bytesRead = 0;
+		int sectors;
+		int byteCountLimit;
 
 		IoInputByte(IDE_REG_STATUS(uIoBase));
 		if(IoInputByte(IDE_REG_STATUS(uIoBase)&1))
@@ -859,8 +867,14 @@ int BootIdeReadSector(int nDriveIndex, void * pbBuffer, unsigned int block, int 
 			printk("Error for drive %i: Must have 2048 byte sector for ATAPI!!!!!\n",nDriveIndex);
 			return 1;
 		}
+		sectors = n_bytes / 2048;
+		if(sectors < 1) sectors = 1;
+		if(sectors > 0xffff) sectors = 0xffff;
+		byteCountLimit = sectors * 2048;
+		if(byteCountLimit > 0xfffe) byteCountLimit = 0xfffe;
+		byteCountLimit &= ~1;
 
-		tsicp.m_wCylinder=2048;
+		tsicp.m_wCylinder=byteCountLimit;
 		memset(ba, 0, sizeof(ba));
 		//memset(&ba[0], 0, 12);
 		ba[0]=0x28;
@@ -868,10 +882,10 @@ int BootIdeReadSector(int nDriveIndex, void * pbBuffer, unsigned int block, int 
 		ba[3]=block>>16;
 		ba[4]=block>>8;
 		ba[5]=block;
-		ba[7]=0;
-		ba[8]=1;
+		ba[7]=sectors>>8;
+		ba[8]=sectors;
 
-		if(BootIdeIssueAtapiPacketCommandAndPacket(nDriveIndex, ba))
+		if(BootIdeIssueAtapiPacketCommandAndPacketLimit(nDriveIndex, ba, byteCountLimit))
 		{
 //			printk("BootIdeReadSector Unable to issue ATAPI command\n");
 			return 1;
@@ -879,23 +893,39 @@ int BootIdeReadSector(int nDriveIndex, void * pbBuffer, unsigned int block, int 
 
 //		printk("BootIdeReadSector issued ATAPI command\n");
 
-		nReturn=IoInputByte(IDE_REG_CYLINDER_LSB(uIoBase));
-		nReturn |=IoInputByte(IDE_REG_CYLINDER_MSB(uIoBase))<<8;
+		{
+		int zeroBytePhases = 0;
+		while(bytesRead < n_bytes) {
+			nReturn=IoInputByte(IDE_REG_CYLINDER_LSB(uIoBase));
+			nReturn |=IoInputByte(IDE_REG_CYLINDER_MSB(uIoBase))<<8;
 //		printk("nReturn = %x\n", nReturn);
 
-		if(nReturn>2048) nReturn=2048;
-		status = BootIdeReadData(uIoBase, pbBuffer, nReturn);
-		if (status != 0)
-		{
-			while(1)
+			if(nReturn == 0) {
+				wait_ms(1);
+				zeroBytePhases++;
+				if(zeroBytePhases > 5000) {
+					printk("BootIdeReadSector ATAPI zero-byte phase timeout, block=%d read=%d/%d status=0x%02X error=0x%02X\n",
+						block, bytesRead, n_bytes, IoInputByte(IDE_REG_ALTSTATUS(uIoBase)), IoInputByte(IDE_REG_ERROR(uIoBase)));
+					return 1;
+				}
+				continue;
+			}
+			if(nReturn > (n_bytes - bytesRead)) nReturn = n_bytes - bytesRead;
+			status = BootIdeReadData(uIoBase, ((u8 *)pbBuffer) + bytesRead, nReturn);
+			if (status != 0)
 			{
-				wait_ms(50);
-				status = BootIdeReadData(uIoBase, pbBuffer, nReturn);
-				if (status == 0)
+				while(1)
 				{
-					break;
+					wait_ms(1);
+					status = BootIdeReadData(uIoBase, ((u8 *)pbBuffer) + bytesRead, nReturn);
+					if (status == 0)
+					{
+						break;
+					}
 				}
 			}
+			bytesRead += nReturn;
+		}
 		}
 		return 0;
 	}

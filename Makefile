@@ -29,6 +29,7 @@ INCLUDE = -isystem$(TOPDIR)/include \
 
 #These are intended to be non-overridable.
 CROM_CFLAGS=$(INCLUDE) -m32 -fno-builtin -nostdinc -fno-stack-protector -no-pie -DGITREV=\\\"$(GITREV)\\\"
+CROM_CFLAGS += $(EXTRA_CROM_CFLAGS)
 
 #You can override these if you wish.
 CFLAGS= -m32 -O2 -g -march=pentium -nostdinc -pipe -fomit-frame-pointer -Wstrict-prototypes -fno-builtin -fno-stack-protector -no-pie
@@ -241,10 +242,10 @@ cromwell.bin:
 
 # This is a local executable, so don't use a cross compiler...
 bin/imagebld: lib/imagebld/imagebld.c lib/crypt/sha1.c lib/crypt/md5.c
-	gcc -m32 -Ilib/crypt -o bin/sha1.o -c lib/crypt/sha1.c
-	gcc -m32 -Ilib/crypt -o bin/md5.o -c lib/crypt/md5.c
-	gcc -m32 -Ilib/crypt -o bin/imagebld.o -c lib/imagebld/imagebld.c
-	gcc -m32 -o bin/imagebld bin/imagebld.o bin/sha1.o bin/md5.o
+	gcc -Ilib/crypt -o bin/sha1.o -c lib/crypt/sha1.c
+	gcc -Ilib/crypt -o bin/md5.o -c lib/crypt/md5.c
+	gcc -Ilib/crypt -o bin/imagebld.o -c lib/imagebld/imagebld.c
+	gcc -o bin/imagebld bin/imagebld.o bin/sha1.o bin/md5.o
 
 imagecompress: obj/image-crom.bin bin/imagebld
 	cp obj/image-crom.bin obj/image-crom.bin.tmp
@@ -252,4 +253,3 @@ imagecompress: obj/image-crom.bin bin/imagebld
 	bin/imagebld -rom obj/2blimage.bin obj/image-crom.bin.tmp.gz image/cromwell.bin image/cromwell_1024.bin
 	bin/imagebld -xbe xbe/xromwell.xbe obj/image-crom.bin
 	bin/imagebld -vml boot_vml/disk/vmlboot obj/image-crom.bin
-

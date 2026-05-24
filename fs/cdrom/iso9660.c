@@ -145,12 +145,14 @@ unsigned long read_file(int driveId, struct iso_directory_record *dir_read, char
 	unsigned long read_size;
 	unsigned long bytes_read;
 	unsigned long offset;
+	unsigned long sectors_to_read;
+	unsigned long bytes_to_read;
+	unsigned long bytes_to_copy;
 	int i;
 	char *tmpbuff;
 
 
 	offset = *((unsigned long *)(dir_read->extent));
-	tmpbuff = (char *) malloc(ISO_BLOCKSIZE);
 
 	if (max_bytes_to_read > *((unsigned int *)(dir_read->size)) ) {
 		read_size = *(unsigned long *)dir_read->size;
@@ -158,26 +160,30 @@ unsigned long read_file(int driveId, struct iso_directory_record *dir_read, char
 	else read_size = *(unsigned long *)max_bytes_to_read;
 
 	bytes_read = read_size;
-
-	if(read_size <= ISO_BLOCKSIZE) {
-		read_size = ISO_BLOCKSIZE;
-	} else {
-		read_size+=(ISO_BLOCKSIZE - (read_size % ISO_BLOCKSIZE));
-	}
+	sectors_to_read = (read_size + ISO_BLOCKSIZE - 1) >> ISOFS_BLOCK_BITS;
+	tmpbuff = (char *) malloc(8 * ISO_BLOCKSIZE);
 
 #ifdef DEBUG_ISO
 	printk("         read_file sector %d %d\n", offset, read_size);
 #endif
-	for(i = 0; i < (read_size >> ISOFS_BLOCK_BITS) ; i++) {
-		memset(tmpbuff, 0x0, ISO_BLOCKSIZE);
-		BootIdeReadSector(driveId, tmpbuff, offset , 0, ISO_BLOCKSIZE);
-		offset++;
-		if(((i+1) * ISO_BLOCKSIZE) > read_size) {
-			memcpy(&buffer[i * ISO_BLOCKSIZE], tmpbuff, (i * ISO_BLOCKSIZE) - read_size);
-		} else {
-			memcpy(&buffer[i * ISO_BLOCKSIZE], tmpbuff, ISO_BLOCKSIZE);
+	for(i = 0; i < sectors_to_read; i += 8) {
+		unsigned long chunk_sectors = sectors_to_read - i;
+		if(chunk_sectors > 8) chunk_sectors = 8;
+		bytes_to_read = chunk_sectors << ISOFS_BLOCK_BITS;
+		memset(tmpbuff, 0x0, bytes_to_read);
+		if((i & 0x7f) == 0) printk(".");
+		if(BootIdeReadSector(driveId, tmpbuff, offset, 0, bytes_to_read)) {
+			printk(" read error at sector %d\n", offset);
+			free(tmpbuff);
+			return -1;
 		}
+		offset += chunk_sectors;
+
+		bytes_to_copy = bytes_read - (i << ISOFS_BLOCK_BITS);
+		if(bytes_to_copy > bytes_to_read) bytes_to_copy = bytes_to_read;
+		memcpy(&buffer[i * ISO_BLOCKSIZE], tmpbuff, bytes_to_copy);
 	}
+	printk("\n");
 	free(tmpbuff);
 
 	return bytes_read;
@@ -218,4 +224,3 @@ int BootIso9660GetFile(int driveId, const char *szcPath, unsigned char *pbaFile,
 		return -1;
 	}
 }
-

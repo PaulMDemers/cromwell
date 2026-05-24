@@ -22,6 +22,7 @@
 #include "video.h"
 #include "memory_layout.h"
 #include "menu/iconmenu/IconMenu.h"
+#include "MenuActions.h"
 #include "lib/misc/LED.h"
 #include "drivers/video/BootVideo.h"
 
@@ -218,6 +219,17 @@ extern void BootResetAction ( void ) {
 
 //	printk("i2C=%d SMC=%d, IDE=%d, tick=%d una=%d unb=%d\n", nCountI2cinterrupts, nCountInterruptsSmc, nCountInterruptsIde, BIOS_TICK_COUNT, nCountUnusedInterrupts, nCountUnusedInterruptsPic2);
 	IconMenuInit();
+#ifdef XBOX_LINUX_AUTOBOOT_CD
+	{
+		int i;
+		for (i = 0; i < 2; ++i) {
+			if (tsaHarddiskInfo[i].m_fAtapi) {
+				printk("AUTOBOOT: CD-ROM (hd%c)\n", i ? 'b' : 'a');
+				PrepareBootFromCD(&i);
+			}
+		}
+	}
+#endif
 	IconMenu();
 	//Should never come back here.
 	while(1);
