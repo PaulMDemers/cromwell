@@ -14,10 +14,14 @@
 #define IDT_LOC 0xB0000
 /* the protected mode part of the kernel has to reside at 1 MB in RAM */
 #define KERNEL_PM_CODE     0x00100000
-/* 8 MB ought to be enough kernel */
-#define KERNEL_PM_CODE_END 0x00900000
+/* Linux 6.18 needs more decompressor/init scratch space than older kernels. */
+#define KERNEL_PM_CODE_END 0x01000000
 
-#define INITRD_START       KERNEL_PM_CODE_END
+/*
+ * Modern bzImages prefer to decompress at 16 MB and can occupy roughly
+ * 13 MB there. Keep the initrd above that kernel image window.
+ */
+#define INITRD_START       0x02000000
 #define MAX_INITRD_END     0x02A00000
 
 #define MAX_KERNEL_SIZE    (KERNEL_PM_CODE_END - KERNEL_PM_CODE)

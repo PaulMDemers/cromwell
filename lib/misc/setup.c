@@ -89,7 +89,11 @@ void setup(void* KernelPos, void* PhysInitrdPos, unsigned long InitrdSize, const
     memset(kernel_setup->__pad2,0x00,sizeof(kernel_setup->__pad2));
     memset(kernel_setup->__pad3,0x00,sizeof(kernel_setup->__pad3));
     memset(kernel_setup->__pad4,0x00,sizeof(kernel_setup->__pad4));
-    memset(kernel_setup->__pad5,0x00,sizeof(kernel_setup->__pad5));
+    /*
+     * Do not clear the bytes after initrd_addr_max. Linux 2.05+ setup
+     * headers use that area for kernel_alignment, xloadflags, payload
+     * metadata, pref_address, init_size, and later fields.
+     */
     kernel_setup->unused2=0;
     kernel_setup->unused3=0;
 
