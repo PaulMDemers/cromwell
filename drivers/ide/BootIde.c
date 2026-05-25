@@ -74,27 +74,45 @@ const char * const szaSenseKeys[] = {
 int BootIdeWaitNotBusy(unsigned uIoBase)
 {
 	u8 b = 0x80;
-	while (b & 0x80) {
+	int i;
+
+	for (i = 0; i < 0x800000; i++) {
 		b=IoInputByte(IDE_REG_ALTSTATUS(uIoBase));
+		if (!(b & 0x80)) {
+			return b&1;
+		}
+		if ((i & 0x3fff) == 0x3fff) {
+			wait_ms(1);
+		}
 	}
-	return b&1;
+
+	printk("BootIdeWaitNotBusy timeout status=0x%02X error=0x%02X\n",
+		IoInputByte(IDE_REG_ALTSTATUS(uIoBase)), IoInputByte(IDE_REG_ERROR(uIoBase)));
+	return 1;
 }
 
 /* -------------------------------------------------------------------------------- */
 
 int BootIdeWaitDataReady(unsigned uIoBase)
 {
-	int i = 0x800000;
+	int i;
+	u8 b;
+
 	wait_smalldelay();
-	do {
-		if ( ((IoInputByte(IDE_REG_ALTSTATUS(uIoBase)) & 0x88) == 0x08)	)	{
-	    if(IoInputByte(IDE_REG_ALTSTATUS(uIoBase)) & 0x01) return 2;
+	for (i = 0; i < 0x800000; i++) {
+		b=IoInputByte(IDE_REG_ALTSTATUS(uIoBase));
+		if ( ((b & 0x88) == 0x08)	)	{
+	    if(b & 0x01) return 2;
 			return 0;
 		}
-		i--;
-	} while (i != 0);
+		if ((i & 0x3fff) == 0x3fff) {
+			wait_ms(1);
+		}
+	}
 
 	if(IoInputByte(IDE_REG_ALTSTATUS(uIoBase)) & 0x01) return 2;
+	printk("BootIdeWaitDataReady timeout status=0x%02X error=0x%02X\n",
+		IoInputByte(IDE_REG_ALTSTATUS(uIoBase)), IoInputByte(IDE_REG_ERROR(uIoBase)));
 	return 1;
 }
 
@@ -821,7 +839,14 @@ int BootIdeReadSector(int nDriveIndex, void * pbBuffer, unsigned int block, int 
 	unsigned char baBufferSector[IDE_SECTOR_SIZE];
 	unsigned int track;
 	int status;
-	unsigned char ideReadCommand = IDE_CMD_READ_MULTI_RETRY; /* 48-bit LBA */
+	int retry;
+	int sectorCount;
+	int sectorIndex;
+	int bytesCopied;
+	int copyBytes;
+	int sectorOffset;
+	int traceRead;
+	unsigned char ideReadCommand = IDE_CMD_READ_MULTIPLE;
 
 	if(!tsaHarddiskInfo[nDriveIndex].m_fDriveExists) return 4;
 
@@ -937,9 +962,10 @@ int BootIdeReadSector(int nDriveIndex, void * pbBuffer, unsigned int block, int 
 		IoOutputByte(IDE_REG_CONTROL(uIoBase), 0x02);
 	}
 
-	tsicp.m_bCountSector = 1;
-
-
+	sectorCount = (byte_offset + n_bytes + IDE_SECTOR_SIZE - 1) / IDE_SECTOR_SIZE;
+	if (sectorCount < 1) sectorCount = 1;
+	if (sectorCount > 255) sectorCount = 255;
+	tsicp.m_bCountSector = sectorCount;
 
 	if( block >= 0x10000000 )
 	{
@@ -982,42 +1008,80 @@ int BootIdeReadSector(int nDriveIndex, void * pbBuffer, unsigned int block, int 
 
 	if(BootIdeIssueAtaCommand(uIoBase, ideReadCommand, &tsicp))
 	{
+		if (ideReadCommand == IDE_CMD_READ_MULTIPLE) {
+			ideReadCommand = IDE_CMD_READ_SECTORS_RETRY;
+			if (BootIdeIssueAtaCommand(uIoBase, ideReadCommand, &tsicp) == 0) {
+				goto read_data;
+			}
+		}
 		printk("ide error %02X...\n", IoInputByte(IDE_REG_ERROR(uIoBase)));
 		return 1;
 	}
 
-	if (n_bytes != IDE_SECTOR_SIZE)
-	{
-		status = BootIdeReadData(uIoBase, baBufferSector, IDE_SECTOR_SIZE);
-		if (status == 0) {
-			memcpy(pbBuffer, baBufferSector+byte_offset, n_bytes);
+read_data:
+	traceRead = 0;
+	if (traceRead) {
+		printk("\nB%X/%d", block, sectorCount);
+	}
 
-		} else {
-			// UPS, it failed, but we are brutal, we try again ....
-			while(1) {
+	bytesCopied = 0;
+	for (sectorIndex = 0; sectorIndex < sectorCount; sectorIndex++) {
+		if (byte_offset == 0 && n_bytes >= IDE_SECTOR_SIZE) {
+			if (traceRead) {
+				printk(" r%d", sectorIndex);
+			}
+			status = BootIdeReadData(uIoBase, ((u8 *)pbBuffer) + bytesCopied, IDE_SECTOR_SIZE);
+			if (traceRead && status == 0) {
+				printk(".");
+			}
+			if (status != 0) {
+				for(retry = 0; retry < 20; retry++) {
+					wait_ms(50);
+					status = BootIdeReadData(uIoBase, ((u8 *)pbBuffer) + bytesCopied, IDE_SECTOR_SIZE);
+					if (status == 0) {
+						break;
+					}
+				}
+				if (status != 0) {
+					printk("BootIdeReadSector HDD read failed block=0x%X sector=%d status=%d alt=0x%02X error=0x%02X\n",
+						block, sectorIndex, status, IoInputByte(IDE_REG_ALTSTATUS(uIoBase)), IoInputByte(IDE_REG_ERROR(uIoBase)));
+					return status;
+				}
+			}
+			bytesCopied += IDE_SECTOR_SIZE;
+			n_bytes -= IDE_SECTOR_SIZE;
+			continue;
+		}
+
+		if (traceRead) {
+			printk(" p%d", sectorIndex);
+		}
+		status = BootIdeReadData(uIoBase, baBufferSector, IDE_SECTOR_SIZE);
+		if (traceRead && status == 0) {
+			printk(".");
+		}
+		if (status != 0) {
+			for(retry = 0; retry < 20; retry++) {
 				wait_ms(50);
 				status = BootIdeReadData(uIoBase, baBufferSector, IDE_SECTOR_SIZE);
 				if (status == 0) {
-					memcpy(pbBuffer, baBufferSector+byte_offset, n_bytes);
 					break;
 				}
 			}
-
-		}
-
-	} else {
-
-		status = BootIdeReadData(uIoBase, pbBuffer, IDE_SECTOR_SIZE);
-		if (status!=0) {
-			// UPS, it failed, but we are brutal, we try again ....
-			while(1) {
-				wait_ms(50);
-				status = BootIdeReadData(uIoBase, pbBuffer, IDE_SECTOR_SIZE);
-				if (status == 0) {
-					break;
-				}
+			if (status != 0) {
+				printk("BootIdeReadSector HDD partial read failed block=0x%X sector=%d status=%d alt=0x%02X error=0x%02X\n",
+					block, sectorIndex, status, IoInputByte(IDE_REG_ALTSTATUS(uIoBase)), IoInputByte(IDE_REG_ERROR(uIoBase)));
+				return status;
 			}
 		}
+
+		sectorOffset = (sectorIndex == 0) ? byte_offset : 0;
+		copyBytes = IDE_SECTOR_SIZE - sectorOffset;
+		if (copyBytes > n_bytes) copyBytes = n_bytes;
+		memcpy(((u8 *)pbBuffer) + bytesCopied, baBufferSector + sectorOffset, copyBytes);
+		bytesCopied += copyBytes;
+		n_bytes -= copyBytes;
+		byte_offset = 0;
 	}
 	return status;
 }

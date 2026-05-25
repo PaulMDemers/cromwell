@@ -134,8 +134,9 @@ int LoadLinuxNative(char *szGrub, const OPTLINUX *optLinux) {
 		return false;
 	}
 
-	// Use INITRD_START as temporary location for loading the Kernel
-	tempBuf = (u8*)INITRD_START;
+	// Use a temporary buffer below INITRD_START while loading the Kernel.
+	tempBuf = (u8*)KERNEL_LOAD_TMP;
+	printk(" tmp=0x%X", (unsigned int)tempBuf);
 	dwKernelSize=grub_read(tempBuf, MAX_KERNEL_SIZE);
 	memPlaceKernel(tempBuf, dwKernelSize);
 	grub_close();
@@ -204,8 +205,9 @@ int LoadLinuxFATX(FATXPartition *partition, OPTLINUX *optLinux) {
 
 	VIDEO_ATTR=0xffd8d8d8;
 	printk("  Loading %s from FATX", optLinux->szKernel);
-	// Use INITRD_START as temporary location for loading the Kernel
-	tempBuf = (u8*)INITRD_START;
+	// Use a temporary buffer below INITRD_START while loading the Kernel.
+	tempBuf = (u8*)KERNEL_LOAD_TMP;
+	printk(" tmp=0x%X", (unsigned int)tempBuf);
 	if (!LoadFATXFilefixed(partition, optLinux->szKernel, &infokernel, tempBuf)) {
 		printk("Error loading kernel %s\n", optLinux->szKernel);
 		wait_ms(2000);
@@ -432,4 +434,3 @@ void startLinux(void* initrdStart, unsigned long initrdSize, const char* appendL
 	// See you again in Linux then
 	while(1);
 }
-

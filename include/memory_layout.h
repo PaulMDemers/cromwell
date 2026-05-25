@@ -16,6 +16,7 @@
 #define KERNEL_PM_CODE     0x00100000
 /* Linux 6.18 needs more decompressor/init scratch space than older kernels. */
 #define KERNEL_PM_CODE_END 0x01000000
+#define KERNEL_LOAD_TMP    0x01000000
 
 /*
  * Modern bzImages prefer to decompress at 16 MB and can occupy roughly

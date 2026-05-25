@@ -10,6 +10,8 @@
 
 //#define FATX_INFO
 
+static unsigned char fileLoadClusterData[0x4000];
+
 int checkForLastDirectoryEntry(unsigned char* entry) {
 
 	// if the filename length byte is 0 or 0xff,
@@ -342,22 +344,23 @@ void _DumpFATXTree(FATXPartition* partition, int clusterId, int nesting) {
 
 int FATXLoadFromDisk(FATXPartition* partition, FATXFILEINFO *fileinfo) {
 
-	unsigned char clusterData[partition->clusterSize];
+	unsigned char *clusterData = fileLoadClusterData;
 	int fileSize = fileinfo->fileSize;
 	int written;
 	int clusterId = fileinfo->clusterId;
 	u8 *ptr;
 
+	if (partition->clusterSize > sizeof(fileLoadClusterData)) {
+		printk("FATXLoadFromDisk : Cluster size %d too large\n", partition->clusterSize);
+		return false;
+	}
+
 	fileinfo->fileRead = 0;
 	ptr = fileinfo->buffer;
 
+	printk(" size=%d cluster=%d", fileinfo->fileSize, clusterId);
 	// loop, outputting clusters
 	while(clusterId != -1) {
-#ifdef FATX_PROGRESS
-		if ((fileinfo->fileRead % (512 * 1024)) == 0) {
-			printk(" [%d]", fileinfo->fileRead);
-		}
-#endif
 		// Load the cluster data
 		LoadFATXCluster(partition, clusterId, clusterData);
 
@@ -367,6 +370,9 @@ int FATXLoadFromDisk(FATXPartition* partition, FATXFILEINFO *fileinfo) {
 		fileSize -= written;
 		fileinfo->fileRead+=written;
 		ptr+=written;
+		if ((fileinfo->fileRead % (512 * 1024)) == 0 || fileSize == 0) {
+			printk(" [%d]", fileinfo->fileRead);
+		}
 
 		// Find next cluster
 		clusterId = getNextClusterInChain(partition, clusterId);
@@ -634,21 +640,25 @@ int FATXRawRead(int drive, int sector, unsigned long long byte_offset, int byte_
         byte_offset%=512;
 
         while(byte_len) {
-		int nThisTime=512;
-		if(byte_len<512) nThisTime=byte_len;
-                if(byte_offset) {
-	                u8 ba[512];
-			if(BootIdeReadSector(drive, buf, sector, 0, 512)) {
+		int nThisTime=byte_len;
+		int sectorsAdvanced;
+		if(byte_offset) {
+			u8 ba[512];
+			nThisTime=512-byte_offset;
+			if(byte_len<nThisTime) nThisTime=byte_len;
+			if(BootIdeReadSector(drive, ba, sector, 0, 512)) {
 				VIDEO_ATTR=0xffe8e8e8;
 				printk("Unable to get first sector\n");
                                 return false;
 			}
-			memcpy(buf, &ba[byte_offset], nThisTime-byte_offset);
-			buf+=nThisTime-byte_offset;
-			byte_len-=nThisTime-byte_offset;
-			byte_read += nThisTime-byte_offset;
+			memcpy(buf, &ba[byte_offset], nThisTime);
+			buf+=nThisTime;
+			byte_len-=nThisTime;
+			byte_read += nThisTime;
 			byte_offset=0;
+			sectorsAdvanced=1;
 		} else {
+			if(nThisTime > 0x4000) nThisTime=0x4000;
 			if(BootIdeReadSector(drive, buf, sector, 0, nThisTime)) {
 				VIDEO_ATTR=0xffe8e8e8;
 				printk("Unable to get first sector\n");
@@ -657,8 +667,9 @@ int FATXRawRead(int drive, int sector, unsigned long long byte_offset, int byte_
 			buf+=nThisTime;
 			byte_len-=nThisTime;
 			byte_read += nThisTime;
+			sectorsAdvanced=(nThisTime + 511) / 512;
 		}
-		sector++;
+		sector+=sectorsAdvanced;
 	}
 	return byte_read;
 }
