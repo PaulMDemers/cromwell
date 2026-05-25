@@ -373,6 +373,9 @@ int FATXLoadFromDisk(FATXPartition* partition, FATXFILEINFO *fileinfo) {
 		if ((fileinfo->fileRead % (512 * 1024)) == 0 || fileSize == 0) {
 			printk(" [%d]", fileinfo->fileRead);
 		}
+		if (fileSize == 0) {
+			break;
+		}
 
 		// Find next cluster
 		clusterId = getNextClusterInChain(partition, clusterId);
@@ -566,7 +569,7 @@ int _FATXFindFile(FATXPartition* partition,
 
 
 u_int32_t getNextClusterInChain(FATXPartition* partition, int clusterId) {
-	int nextClusterId = 0;
+	u_int32_t nextClusterId = 0;
 	u_int32_t eocMarker = 0;
 	u_int32_t rootFatMarker = 0;
 	u_int32_t maxCluster = 0;
@@ -575,6 +578,7 @@ u_int32_t getNextClusterInChain(FATXPartition* partition, int clusterId) {
 	if (clusterId < 1) {
 		VIDEO_ATTR=0xffe8e8e8;
 		printk("getNextClusterInChain : Attempt to access invalid cluster: %i\n", clusterId);
+		return -1;
 	}
 
 	// get the next ID
@@ -594,7 +598,7 @@ u_int32_t getNextClusterInChain(FATXPartition* partition, int clusterId) {
 	}
 
 	// is it the end of chain?
-  	if ((nextClusterId == eocMarker) || (nextClusterId == rootFatMarker)) {
+	if ((nextClusterId == eocMarker) || (nextClusterId >= rootFatMarker)) {
 		return -1;
 	}
 
