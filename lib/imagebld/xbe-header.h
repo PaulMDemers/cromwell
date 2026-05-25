@@ -1,3 +1,5 @@
+#include <stdint.h>
+
 // XBE stuff
 // Not used in any exported kernel calls, but still useful.
 
@@ -9,7 +11,7 @@ typedef struct _XBE_HEADER {
 	// 004 RSA digital signature of the entire header area
 	unsigned char HeaderSignature[256];
 	// 104 Base address of XBE image (must be 0x00010000?)
-	void* BaseAddress;
+	uint32_t BaseAddress;
 	// 108 Size of all headers combined - other headers must be within this
 	unsigned int HeaderSize;
 	// 10C Size of entire image
@@ -19,17 +21,17 @@ typedef struct _XBE_HEADER {
 	// 114 Image timestamp - unknown format
 	unsigned int Timestamp;
 	// 118 Pointer to certificate data (must be within HeaderSize)
-	struct _XBE_CERTIFICATE *Certificate;
+	uint32_t Certificate;
 	// 11C Number of sections
 	int NumSections;
 	// 120 Pointer to section headers (must be within HeaderSize)
-	struct _XBE_SECTION *Sections;
+	uint32_t Sections;
 	// 124 Initialization flags
 	unsigned int InitFlags;
 	// 128 Entry point (XOR'd; see xboxhacker.net)
-	void* EntryPoint;
+	uint32_t EntryPoint;
 	// 12C Pointer to TLS directory
-	struct _XBE_TLS_DIRECTORY *TlsDirectory;
+	uint32_t TlsDirectory;
 	// 130 Stack commit size
 	unsigned int StackCommit;
 	// 134 Heap reserve size
@@ -37,7 +39,7 @@ typedef struct _XBE_HEADER {
 	// 138 Heap commit size
 	unsigned int HeapCommit;
 	// 13C PE base address (?)
-	void* PeBaseAddress;
+	uint32_t PeBaseAddress;
 	// 140 PE image size (?)
 	unsigned int PeImageSize;
 	// 144 PE checksum (?)
@@ -45,25 +47,25 @@ typedef struct _XBE_HEADER {
 	// 148 PE timestamp (?)
 	unsigned int PeTimestamp;
 	// 14C PC path and filename to EXE file from which XBE is derived
-	char* PcExePath;
+	uint32_t PcExePath;
 	// 150 PC filename (last part of PcExePath) from which XBE is derived
-	char* PcExeFilename;
+	uint32_t PcExeFilename;
 	// 154 PC filename (Unicode version of PcExeFilename)
-	void* PcExeFilenameUnicode;
+	uint32_t PcExeFilenameUnicode;
 	// 158 Pointer to kernel thunk table (XOR'd; EFB1F152 debug)
-	unsigned int *KernelThunkTable;
+	uint32_t KernelThunkTable;
 	// 15C Non-kernel import table (debug only)
-	void* DebugImportTable;
+	uint32_t DebugImportTable;
 	// 160 Number of library headers
 	unsigned int NumLibraries;
 	// 164 Pointer to library headers
-	struct _XBE_LIBRARY *Libraries;
+	uint32_t Libraries;
 	// 168 Pointer to kernel library header
-	struct _XBE_LIBRARY *KernelLibrary;
+	uint32_t KernelLibrary;
 	// 16C Pointer to XAPI library
-	struct _XBE_LIBRARY *XapiLibrary;
+	uint32_t XapiLibrary;
 	// 170 Pointer to logo bitmap (NULL = use default of Microsoft)
-	void* LogoBitmap;
+	uint32_t LogoBitmap;
 	// 174 Size of logo bitmap
 	unsigned int LogoBitmapSize;
 	// 178
@@ -105,7 +107,7 @@ typedef struct _XBE_SECTION {
 	// 000 Flags
 	unsigned int Flags;
 	// 004 Virtual address (where this section loads in RAM)
-	void* VirtualAddress;
+	uint32_t VirtualAddress;
 	// 008 Virtual size (size of section in RAM; after FileSize it's 00'd)
 	unsigned int VirtualSize;
 	// 00C File address (where in the file from which this section comes)
@@ -113,13 +115,13 @@ typedef struct _XBE_SECTION {
 	// 010 File size (size of the section in the XBE file)
 	unsigned int FileSize;
 	// 014 Pointer to section name
-	char* SectionName;
+	uint32_t SectionName;
 	// 018 Section reference count - when >= 1, section is loaded
 	int SectionReferenceCount;
 	// 01C Pointer to head shared page reference count
-	short *HeadReferenceCount;
+	uint32_t HeadReferenceCount;
 	// 020 Pointer to tail shared page reference count
-	short *TailReferenceCount;
+	uint32_t TailReferenceCount;
 	// 024 SHA hash.  Hash int containing FileSize, then hash section.
 	int ShaHash[5];
 	// 038
@@ -188,4 +190,3 @@ typedef struct _XBE_LIBRARY {
 #define XBE_SEC_INSERTED_FILE           0x00000008
 #define XBE_SEC_RO_HEAD_PAGE            0x00000010
 #define XBE_SEC_RO_TAIL_PAGE            0x00000020
-

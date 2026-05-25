@@ -11,6 +11,7 @@
 
 #include <stdarg.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include "sha1.h"
 #include "md5.h"
 
@@ -115,7 +116,7 @@ int xberepair ( const char * xbeimage,
 
        	printf("XBE Mode\n");
 
-	f = fopen(cromimage, "r");
+	f = fopen(cromimage, "rb");
     	if (f==NULL) {
 		fprintf(stderr,"Unable to open cromwell image file %s : %s \nAborting\n",xbeimage,strerror(errno));
 		return 1;
@@ -133,7 +134,7 @@ int xberepair ( const char * xbeimage,
 	fread(crom, 1, romsize, f);
 	fclose(f);
 
-	f = fopen(xbeimage, "r");
+	f = fopen(xbeimage, "rb");
     	if (f==NULL) {
 		fprintf(stderr,"Unable to open xbe destination file %s : %s \nAborting\n",xbeimage,strerror(errno));
 		return 1;
@@ -145,7 +146,7 @@ int xberepair ( const char * xbeimage,
 
         fseek(f, 0, SEEK_SET);
 
-    	memset(xbe,0x00,sizeof(xbe));
+	memset(xbe, 0x00, 1024*1024+0x3000);
     	fread(xbe, 1, xbesize, f);
     	fclose(f);
 
@@ -157,7 +158,7 @@ int xberepair ( const char * xbeimage,
 
         header = (XBE_HEADER*) xbe;
 	// This selects the First Section, we only have one
-	sechdr = (XBE_SECTION *)(((char *)xbe) + (int)header->Sections - (int)header->BaseAddress);
+	sechdr = (XBE_SECTION *)(((char *)xbe) + (uintptr_t)header->Sections - (uintptr_t)header->BaseAddress);
 
         // Correcting overall size now
 	xbesize = 0x3000+romsize;
@@ -190,7 +191,7 @@ int xberepair ( const char * xbeimage,
       	#endif
 
 	// Write back the Image to Disk
-	f = fopen(xbeimage, "w");
+	f = fopen(xbeimage, "wb");
     	if (f==NULL) {
 		fprintf(stderr,"Unable to open xbe destination file %s : %s \nAborting\n",xbeimage,strerror(errno));
 		return 1;
@@ -223,7 +224,7 @@ int vmlbuild (	const char * vmlimage,
 
        	printf("VML Mode\n");
 
-	f = fopen(cromimage, "r");
+	f = fopen(cromimage, "rb");
     	if (f==NULL) {
 		fprintf(stderr,"Unable to open cromwell image file %s : %s \nAborting\n",cromimage,strerror(errno));
 		return 1;
@@ -241,7 +242,7 @@ int vmlbuild (	const char * vmlimage,
     	fread(crom, 1, romsize, f);
     	fclose(f);
 
-	f = fopen(vmlimage, "r");
+	f = fopen(vmlimage, "rb");
     	if (f==NULL) {
 		fprintf(stderr,"Unable to open vml image file %s : %s \nAborting\n",vmlimage,strerror(errno));
 		return 1;
@@ -260,7 +261,7 @@ int vmlbuild (	const char * vmlimage,
     	vmlsize +=100;
 
 	// Write back the Image to Disk
-	f = fopen(vmlimage, "w");
+	f = fopen(vmlimage, "wb");
     	if (f==NULL) {
 		fprintf(stderr,"Unable to open vml image file %s : %s \nAborting\n",vmlimage,strerror(errno));
 		return 1;
@@ -309,7 +310,7 @@ int romcopy (
 
        	printf("ROM Mode\n");
 
-	f = fopen(blbinname, "r");
+	f = fopen(blbinname, "rb");
 	if (f==NULL) {
 		fprintf(stderr,"Unable to open blimage file %s : %s \nAborting\n",blbinname,strerror(errno));
 		return 1;
@@ -319,7 +320,7 @@ int romcopy (
         fclose(f);
 
 
-	f = fopen(cromimage, "r");
+	f = fopen(cromimage, "rb");
 	if (f==NULL) {
 		fprintf(stderr,"Unable to open cromwell image file %s : %s \nAborting\n",cromimage,strerror(errno));
 		return 1;
@@ -465,11 +466,11 @@ int romcopy (
       	writeBiosIdentifier(flash256, 256*1024);
       	writeBiosIdentifier(flash1024, 1024*1024);
 	// Write the 256 /1024 Kbyte Image Back
-      	f = fopen(binname256, "w");
+      	f = fopen(binname256, "wb");
 	fwrite(flash256, 1, 256*1024, f);
        	fclose(f);
 
-      	f = fopen(binname1024, "w");
+      	f = fopen(binname1024, "wb");
 	fwrite(flash1024, 1, 1024*1024, f);
        	fclose(f);
 
