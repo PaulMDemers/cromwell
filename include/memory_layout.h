@@ -23,7 +23,7 @@
  * 13 MB there. Keep the initrd above that kernel image window.
  */
 #define INITRD_START       0x02000000
-#define MAX_INITRD_END     0x02A00000
+#define MAX_INITRD_END     0x03800000
 
 #define MAX_KERNEL_SIZE    (KERNEL_PM_CODE_END - KERNEL_PM_CODE)
 #define MAX_INITRD_SIZE    (MAX_INITRD_END - INITRD_START)
@@ -32,8 +32,13 @@
 #define FREELDR_LOAD_AREA  (u8 *)0x00001000
 #define FREELDR_MAX_SIZE   0x80000
 
-#define MEMORYMANAGERSTART MAX_INITRD_END
-#define MEMORYMANAGEREND   0x039FFFFF
+/*
+ * Keep Cromwell's heap below the initrd. The old layout put the heap above
+ * MAX_INITRD_END; widening the initrd window for Tiny Core left too little
+ * heap for early video/FATX setup and xemu stayed black.
+ */
+#define MEMORYMANAGERSTART 0x01600000
+#define MEMORYMANAGEREND   0x01FFFFFF
 #define MEMORYMANAGERSIZE  (MEMORYMANAGEREND - MEMORYMANAGERSTART)
 
 #define STACK_TOP 0x03C00000
