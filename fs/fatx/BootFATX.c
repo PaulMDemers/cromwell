@@ -33,7 +33,6 @@ int LoadFATXFilefixed(FATXPartition *partition, char *filename, FATXFILEINFO *fi
 			printk("fileSize  : %d\n",fileinfo->fileSize);
 #endif
 			fileinfo->buffer = Position;
-			memset(fileinfo->buffer,0xff,fileinfo->fileSize);
 
 			if(FATXLoadFromDisk(partition, fileinfo)) {
 				return true;
@@ -66,8 +65,8 @@ int LoadFATXFile(FATXPartition *partition,char *filename, FATXFILEINFO *fileinfo
 			printk("ClusterID : %d\n",fileinfo->clusterId);
 			printk("fileSize  : %d\n",fileinfo->fileSize);
 #endif
-			fileinfo->buffer = malloc(fileinfo->fileSize);
-			memset(fileinfo->buffer,0,fileinfo->fileSize);
+			fileinfo->buffer = malloc(fileinfo->fileSize + 1);
+			memset(fileinfo->buffer,0,fileinfo->fileSize + 1);
 			if(FATXLoadFromDisk(partition, fileinfo)) {
 				return true;
 			} else {
@@ -354,6 +353,11 @@ int FATXLoadFromDisk(FATXPartition* partition, FATXFILEINFO *fileinfo) {
 
 	// loop, outputting clusters
 	while(clusterId != -1) {
+#ifdef FATX_PROGRESS
+		if ((fileinfo->fileRead % (512 * 1024)) == 0) {
+			printk(" [%d]", fileinfo->fileRead);
+		}
+#endif
 		// Load the cluster data
 		LoadFATXCluster(partition, clusterId, clusterData);
 

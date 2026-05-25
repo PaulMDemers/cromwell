@@ -35,13 +35,13 @@ CONFIGENTRY *ParseConfig(char *szBuffer, unsigned int fileLen, char *szPath) {
 			//If so, this is the start of a new 'bootitem'.
 			//Otherwise, it begins a whole new entry
 			if (strlen(currentEntry->title)==0) {
-				strncpy(currentEntry->title, paramdata, strlen(paramdata));
+				strncpy(currentEntry->title, paramdata, sizeof(currentEntry->title) - 1);
 			}
 			else {
 				currentEntry->nextConfigEntry = malloc(sizeof(CONFIGENTRY));
 				memset(currentEntry->nextConfigEntry, 0x00, sizeof(CONFIGENTRY));
 				currentEntry = (CONFIGENTRY*)currentEntry->nextConfigEntry;
-				strncpy(currentEntry->title, paramdata, strlen(paramdata));
+				strncpy(currentEntry->title, paramdata, sizeof(currentEntry->title) - 1);
 			}
 			currentEntry->bootSystem = SYS_LINUX;
 		}

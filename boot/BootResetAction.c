@@ -218,6 +218,27 @@ extern void BootResetAction ( void ) {
 	setLED("gggg");
 
 //	printk("i2C=%d SMC=%d, IDE=%d, tick=%d una=%d unb=%d\n", nCountI2cinterrupts, nCountInterruptsSmc, nCountInterruptsIde, BIOS_TICK_COUNT, nCountUnusedInterrupts, nCountUnusedInterruptsPic2);
+#ifdef XBOX_LINUX_AUTOBOOT_FATX
+	{
+		CONFIGENTRY *entry;
+		CONFIGENTRY *bootEntry;
+		CONFIGENTRY *currentEntry;
+
+		printk("AUTOBOOT: FatX (E:)\n");
+		entry = DetectSystemFatX();
+		if (entry) {
+			bootEntry = entry->nestedConfigEntry ? entry->nestedConfigEntry : entry;
+			for (currentEntry = bootEntry; currentEntry != NULL; currentEntry = currentEntry->nextConfigEntry) {
+				if (currentEntry->isDefault) {
+					bootEntry = currentEntry;
+					break;
+				}
+			}
+			BootFromDevice(bootEntry);
+		}
+		printk("AUTOBOOT: FatX failed.\n");
+	}
+#endif
 	IconMenuInit();
 #ifdef XBOX_LINUX_AUTOBOOT_CD
 	{
