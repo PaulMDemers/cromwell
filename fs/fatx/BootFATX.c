@@ -10,7 +10,7 @@
 
 //#define FATX_INFO
 
-static unsigned char fileLoadClusterData[0x4000];
+static unsigned char fileLoadClusterData[0x10000];
 
 int checkForLastDirectoryEntry(unsigned char* entry) {
 
@@ -136,6 +136,8 @@ FATXPartition *OpenFATXPartition(int nDriveIndex,
 	FATXPartition *partition;
 	int readSize;
 	unsigned int chainTableSize;
+	u_int32_t sectorsPerCluster;
+	u_int32_t clusterShift;
 
 #ifdef FATX_DEBUG
 	printk("OpenFATXPartition : Read partition header\n");
@@ -181,8 +183,25 @@ FATXPartition *OpenFATXPartition(int nDriveIndex,
 	partition->nDriveIndex = nDriveIndex;
 	partition->partitionStart = partitionOffset;
 	partition->partitionSize = partitionSize;
-	partition->clusterSize = 0x4000;
-	partition->clusterCount = partition->partitionSize / 0x4000;
+	sectorsPerCluster = *((u_int32_t*) (partitionInfo + 8));
+	if (sectorsPerCluster == 0 || sectorsPerCluster > 128) {
+		VIDEO_ATTR=0xffe8e8e8;
+		printk("OpenFATXPartition : Invalid sectors per cluster: %i\n", sectorsPerCluster);
+		free(partition);
+		return NULL;
+	}
+	clusterShift = 0;
+	while ((1U << clusterShift) < sectorsPerCluster) {
+		clusterShift++;
+	}
+	if ((1U << clusterShift) != sectorsPerCluster) {
+		VIDEO_ATTR=0xffe8e8e8;
+		printk("OpenFATXPartition : Non-power-of-two sectors per cluster: %i\n", sectorsPerCluster);
+		free(partition);
+		return NULL;
+	}
+	partition->clusterSize = sectorsPerCluster * 512;
+	partition->clusterCount = (u_int32_t)(partition->partitionSize >> (9 + clusterShift));
 	partition->chainMapEntrySize = (partition->clusterCount >= 0xfff4) ? 4 : 2;
 
 	// Now, work out the size of the cluster chain map table
