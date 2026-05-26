@@ -269,7 +269,9 @@ void _DumpFATXTree(FATXPartition* partition, int clusterId, int nesting) {
 	// OK, output all the directory entries
 	endOfDirectory = 0;
 	while(clusterId != -1) {
-		LoadFATXCluster(partition, clusterId, clusterData);
+		if (!LoadFATXCluster(partition, clusterId, clusterData)) {
+			return;
+		}
 
 		// loop through it, outputing entries
 		for(i=0; i< partition->clusterSize / FATX_DIRECTORYENTRY_SIZE; i++) {
@@ -381,7 +383,9 @@ int FATXLoadFromDisk(FATXPartition* partition, FATXFILEINFO *fileinfo) {
 	// loop, outputting clusters
 	while(clusterId != -1) {
 		// Load the cluster data
-		LoadFATXCluster(partition, clusterId, clusterData);
+		if (!LoadFATXCluster(partition, clusterId, clusterData)) {
+			return false;
+		}
 
 		// Now, output it
 		written = (fileSize <= partition->clusterSize) ? fileSize : partition->clusterSize;
@@ -498,7 +502,9 @@ int _FATXFindFile(FATXPartition* partition,
 	endOfDirectory = 0;
 	while(clusterId != -1) {
     		// load cluster data
-    		LoadFATXCluster(partition, clusterId, clusterData);
+    		if (!LoadFATXCluster(partition, clusterId, clusterData)) {
+			return false;
+		}
 
 		// loop through it, outputing entries
 		for(i=0; i< partition->clusterSize / FATX_DIRECTORYENTRY_SIZE; i++) {
@@ -594,7 +600,7 @@ u_int32_t getNextClusterInChain(FATXPartition* partition, int clusterId) {
 	u_int32_t maxCluster = 0;
 
 	// check
-	if (clusterId < 1) {
+	if (clusterId < 1 || (u_int32_t)clusterId >= partition->clusterCount) {
 		VIDEO_ATTR=0xffe8e8e8;
 		printk("getNextClusterInChain : Attempt to access invalid cluster: %i\n", clusterId);
 		return -1;
@@ -625,18 +631,32 @@ u_int32_t getNextClusterInChain(FATXPartition* partition, int clusterId) {
 	if (nextClusterId == 0) {
 		VIDEO_ATTR=0xffe8e8e8;
 		printk("getNextClusterInChain : Cluster chain problem: Next cluster after %i is unallocated!\n", clusterId);
+		return -1;
         }
 	if (nextClusterId > maxCluster) {
+		VIDEO_ATTR=0xffe8e8e8;
 		printk("getNextClusterInChain : Cluster chain problem: Next cluster after %i has invalid value: %i\n", clusterId, nextClusterId);
+		return -1;
+	}
+	if (nextClusterId >= partition->clusterCount) {
+		VIDEO_ATTR=0xffe8e8e8;
+		printk("getNextClusterInChain : Next cluster after %i is outside partition: %i\n", clusterId, nextClusterId);
+		return -1;
 	}
 
 	// OK!
 	return nextClusterId;
 }
 
-void LoadFATXCluster(FATXPartition* partition, int clusterId, unsigned char* clusterData) {
+int LoadFATXCluster(FATXPartition* partition, int clusterId, unsigned char* clusterData) {
 	u_int64_t clusterAddress;
 	u_int64_t readSize;
+
+	if (clusterId < 1 || (u_int32_t)clusterId >= partition->clusterCount) {
+		VIDEO_ATTR=0xffe8e8e8;
+		printk("LoadFATXCluster : Refusing invalid cluster %i\n", clusterId);
+		return false;
+	}
 
 	// work out the address of the cluster
 	clusterAddress = partition->cluster1Address + ((unsigned long long)(clusterId - 1) * partition->clusterSize);
@@ -647,7 +667,9 @@ void LoadFATXCluster(FATXPartition* partition, int clusterId, unsigned char* clu
 
         if (readSize != partition->clusterSize) {
 		printk("LoadFATXCluster : Out of data while reading cluster %i\n", clusterId);
+		return false;
 	}
+	return true;
 }
 
 

@@ -107,7 +107,7 @@ FATXPartition *OpenFATXPartition(int nDriveIndex,unsigned int partitionOffset,
 int FATXRawRead (int drive, int sector, unsigned long long byte_offset, int byte_len, char *buf);
 void DumpFATXTree(FATXPartition *partition);
 void _DumpFATXTree(FATXPartition* partition, int clusterId, int nesting);
-void LoadFATXCluster(FATXPartition* partition, int clusterId, unsigned char* clusterData);
+int LoadFATXCluster(FATXPartition* partition, int clusterId, unsigned char* clusterData);
 u_int32_t getNextClusterInChain(FATXPartition* partition, int clusterId);
 void CloseFATXPartition(FATXPartition* partition);
 int FATXFindFile(FATXPartition* partition, char* filename,int clusterId, FATXFILEINFO *fileinfo);
