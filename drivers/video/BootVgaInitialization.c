@@ -33,6 +33,10 @@
 unsigned int video_encoder;
 u8 VIDEO_AV_MODE;
 
+#ifdef XBOX_FORCE_AV_HDTV_480P
+#define XBOX_FORCED_AV_MODE 1
+#endif
+
 void DetectVideoEncoder(void) {
 	if (I2CTransmitByteGetReturn(0x45,0x00) != ERR_I2C_ERROR_BUS) video_encoder = ENCODER_CONEXANT;
 	else if (I2CTransmitByteGetReturn(0x6a,0x00) != ERR_I2C_ERROR_BUS) video_encoder = ENCODER_FOCUS;
@@ -100,7 +104,11 @@ void BootVgaInitializationKernelNG(CURRENT_VIDEO_MODE_DETAILS * pvmode) {
 	DetectVideoEncoder();
 
         // Dump to global variable
+#ifdef XBOX_FORCE_AV_HDTV_480P
+	VIDEO_AV_MODE=XBOX_FORCED_AV_MODE;
+#else
 	VIDEO_AV_MODE=I2CTransmitByteGetReturn(0x10, 0x04);
+#endif
 	av_type = DetectAvType();
 	gpu.av_type = av_type;
 
@@ -120,7 +128,11 @@ void BootVgaInitializationKernelNG(CURRENT_VIDEO_MODE_DETAILS * pvmode) {
 
         (*(unsigned int*)0xFD600800) = (FB_START & 0x0fffffff);
 
+#ifdef XBOX_FORCE_AV_HDTV_480P
+	pvmode->m_bAvPack=XBOX_FORCED_AV_MODE;
+#else
 	pvmode->m_bAvPack=I2CTransmitByteGetReturn(0x10, 0x04);
+#endif
 	pvmode->m_pbBaseAddressVideo=(u8 *)0xfd000000;
 	pvmode->m_fForceEncoderLumaAndChromaToZeroInitially=1;
 	pvmode->m_bBPP = 32;
@@ -558,4 +570,3 @@ static void NVInitAttr (RIVA_HW_INST *riva, int head)
       	NVWriteAttr(riva,0, 18, 0x00);
       	NVWriteAttr(riva,0, 19, 0x00);
 }
-
