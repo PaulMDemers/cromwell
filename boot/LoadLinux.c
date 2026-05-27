@@ -175,18 +175,32 @@ CONFIGENTRY *DetectLinuxFATX(FATXPartition *partition) {
 	FATXFILEINFO fileinfo;
 	CONFIGENTRY *config=NULL, *currentConfigItem=NULL;
 
+#ifdef FATX_PROGRESS
+	printk("FATX: detect linux /linuxboot.cfg\n");
+#endif
 	if (LoadFATXFile(partition, "/linuxboot.cfg", &fileinfo)) {
 		//Root of E has a linuxboot.cfg in
+#ifdef FATX_PROGRESS
+		printk("FATX: found /linuxboot.cfg size=%d\n", fileinfo.fileSize);
+#endif
 		config = (CONFIGENTRY *)malloc(sizeof(CONFIGENTRY));
 		config = ParseConfig(fileinfo.buffer, fileinfo.fileSize, NULL);
 		free(fileinfo.buffer);
 	}
 	else if (LoadFATXFile(partition, "/debian/linuxboot.cfg", &fileinfo)) {
 		//Try in /debian on E
+#ifdef FATX_PROGRESS
+		printk("FATX: found /debian/linuxboot.cfg size=%d\n", fileinfo.fileSize);
+#endif
 		config = (CONFIGENTRY *)malloc(sizeof(CONFIGENTRY));
 		config = ParseConfig(fileinfo.buffer, fileinfo.fileSize, "/debian");
 		free(fileinfo.buffer);
 	}
+#ifdef FATX_PROGRESS
+	else {
+		printk("FATX: linuxboot.cfg not found\n");
+	}
+#endif
 
 	return config;
 }

@@ -12,6 +12,17 @@
 
 static unsigned char fileLoadClusterData[0x10000];
 
+static int FATXNameEquals(const char *left, const char *right) {
+	while (*left && *right) {
+		if (tolower(*left) != tolower(*right)) {
+			return 0;
+		}
+		left++;
+		right++;
+	}
+	return *left == 0 && *right == 0;
+}
+
 int checkForLastDirectoryEntry(unsigned char* entry) {
 
 	// if the filename length byte is 0 or 0xff,
@@ -142,6 +153,12 @@ FATXPartition *OpenFATXPartition(int nDriveIndex,
 #ifdef FATX_DEBUG
 	printk("OpenFATXPartition : Read partition header\n");
 #endif
+#ifdef FATX_PROGRESS
+	printk("FATX: open part sector=0x%X size=0x%X%08X\n",
+		partitionOffset,
+		(unsigned int)(partitionSize >> 32),
+		(unsigned int)partitionSize);
+#endif
 	// load the partition header
 	readSize = FATXRawRead(nDriveIndex, partitionOffset, 0,
 			FATX_PARTITION_HEADERSIZE, (char *)&partitionInfo);
@@ -212,6 +229,15 @@ FATXPartition *OpenFATXPartition(int nDriveIndex,
 				* FATX_CHAINTABLE_BLOCKSIZE;
 	}
 
+#ifdef FATX_PROGRESS
+	printk("FATX: spc=%d csize=%d clusters=%d ent=%d table=%d\n",
+		sectorsPerCluster,
+		partition->clusterSize,
+		partition->clusterCount,
+		partition->chainMapEntrySize,
+		chainTableSize);
+#endif
+
 #ifdef FATX_DEBUG
 	printk("OpenFATXPartition : Allocating chaintable struct\n");
 #endif
@@ -242,6 +268,12 @@ FATXPartition *OpenFATXPartition(int nDriveIndex,
 		printk("Out of data while reading cluster chain map table\n");
 #endif
 	}
+#ifdef FATX_PROGRESS
+	printk("FATX: table read %d/%d cluster1=0x%X\n",
+		readSize,
+		chainTableSize,
+		FATX_PARTITION_HEADERSIZE + chainTableSize);
+#endif
 	partition->cluster1Address = ( ( FATX_PARTITION_HEADERSIZE + chainTableSize) );
 
 	return partition;
@@ -544,7 +576,7 @@ int _FATXFindFile(FATXPartition* partition,
 			fileSize = *((u_int32_t*) (curEntry + 0x30));
 
 			// is it what we're looking for...
-			if (strlen(seekFilename)==strlen(foundFilename) && strncmp(foundFilename, seekFilename,strlen(seekFilename)) == 0) {
+			if (FATXNameEquals(foundFilename, seekFilename)) {
 				// if we're looking for a directory and found a directory
 				if (lookForDirectory) {
 					if (flags & FATX_FILEATTR_DIRECTORY) {
