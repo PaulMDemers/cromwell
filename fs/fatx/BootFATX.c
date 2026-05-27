@@ -12,7 +12,7 @@
 
 static unsigned char fileLoadClusterData[0x10000];
 
-#define FATX_MAX_EAGER_CHAINTABLE (1024 * 1024)
+#define FATX_MAX_EAGER_CHAINTABLE (4 * 1024 * 1024)
 
 static int FATXNameEquals(const char *left, const char *right) {
 	while (*left && *right) {
@@ -281,10 +281,9 @@ FATXPartition *OpenFATXPartition(int nDriveIndex,
 	    	if (partition->clusterChainMap.words == NULL) {
 			VIDEO_ATTR=0xffe8e8e8;
 #ifdef FATX_INFO
-			printk("OpenFATXPartition : Out of memory\n");
+			printk("OpenFATXPartition : Out of memory, falling back to lazy chain map\n");
 #endif
-			free(partition);
-			return NULL;
+			goto lazy_chain_map;
 		}
 
 		readSize = FATXRawRead(nDriveIndex, partitionOffset, FATX_PARTITION_HEADERSIZE,
@@ -293,8 +292,10 @@ FATXPartition *OpenFATXPartition(int nDriveIndex,
 	    	if (readSize != chainTableSize) {
 			VIDEO_ATTR=0xffe8e8e8;
 #ifdef FATX_INFO
-			printk("Out of data while reading cluster chain map table\n");
+			printk("Out of data while reading cluster chain map table, falling back to lazy reads\n");
 #endif
+			free(partition->clusterChainMap.words);
+			goto lazy_chain_map;
 		}
 #ifdef FATX_PROGRESS
 		printk("FATX: table read %d/%d cluster1=0x%X\n",
@@ -303,6 +304,7 @@ FATXPartition *OpenFATXPartition(int nDriveIndex,
 			FATX_PARTITION_HEADERSIZE + chainTableSize);
 #endif
 	} else {
+lazy_chain_map:
 		partition->clusterChainMap.words = NULL;
 #ifdef FATX_PROGRESS
 		printk("FATX: lazy table %d cluster1=0x%X\n",
