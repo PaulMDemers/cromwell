@@ -218,6 +218,9 @@ int LoadLinuxFATX(FATXPartition *partition, OPTLINUX *optLinux) {
 	memset(&infoinitrd, 0x00, sizeof(infoinitrd));
 
 	VIDEO_ATTR=0xffd8d8d8;
+#ifdef FATX_PROGRESS
+	printk("FATX: loading kernel %s\n", optLinux->szKernel);
+#endif
 	printk("  Loading %s from FATX", optLinux->szKernel);
 	// Use a temporary buffer below INITRD_START while loading the Kernel.
 	tempBuf = (u8*)KERNEL_LOAD_TMP;

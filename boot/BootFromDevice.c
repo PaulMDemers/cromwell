@@ -151,6 +151,11 @@ CONFIGENTRY *DetectSystemFatX(void) {
 	if (cfgLinux != NULL) {
 		FillConfigEntries(cfgLinux, BOOT_FATX, 0, 0);
 		config = AddNestedConfigEntry(config, cfgLinux, "Linux");
+#ifdef XBOX_LINUX_AUTOBOOT_FATX
+		printk("FATX: parsed linuxboot.cfg\n");
+		CloseFATXPartition(partition);
+		return config;
+#endif
 	}
 	cfgReactOS = DetectReactOSFATX(partition);
 	if (cfgReactOS != NULL) {
@@ -168,6 +173,9 @@ int BootFromFatX(CONFIGENTRY *config) {
 
 	DVDTrayClose();
 
+#ifdef FATX_PROGRESS
+	printk("FATX: boot open E\n");
+#endif
 	partition = OpenFATXPartition(0, SECTOR_STORE, STORE_SIZE);
 	if (!partition)
 		return false;

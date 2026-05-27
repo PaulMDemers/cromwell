@@ -234,6 +234,7 @@ extern void BootResetAction ( void ) {
 					break;
 				}
 			}
+			printk("AUTOBOOT: selected Linux\n");
 			BootFromDevice(bootEntry);
 		}
 		printk("AUTOBOOT: FatX failed.\n");
