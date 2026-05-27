@@ -12,6 +12,8 @@
 
 static unsigned char fileLoadClusterData[0x10000];
 
+#define FATX_MAX_EAGER_CHAINTABLE (1024 * 1024)
+
 static int FATXNameEquals(const char *left, const char *right) {
 	while (*left && *right) {
 		if (tolower(*left) != tolower(*right)) {
@@ -21,6 +23,28 @@ static int FATXNameEquals(const char *left, const char *right) {
 		right++;
 	}
 	return *left == 0 && *right == 0;
+}
+
+static int FATXReadChainMapEntry(FATXPartition *partition, int clusterId, u_int32_t *value) {
+	unsigned char entry[4];
+	unsigned long long offset;
+	int readSize;
+
+	offset = FATX_PARTITION_HEADERSIZE + ((unsigned long long)clusterId * partition->chainMapEntrySize);
+	readSize = FATXRawRead(partition->nDriveIndex, partition->partitionStart,
+			offset, partition->chainMapEntrySize, (char *)entry);
+	if (readSize != partition->chainMapEntrySize) {
+		VIDEO_ATTR=0xffe8e8e8;
+		printk("FATX: chain read failed cluster=%i read=%d\n", clusterId, readSize);
+		return false;
+	}
+
+	if (partition->chainMapEntrySize == 2) {
+		*value = entry[0] | (entry[1] << 8);
+	} else {
+		*value = entry[0] | (entry[1] << 8) | (entry[2] << 16) | (entry[3] << 24);
+	}
+	return true;
 }
 
 int checkForLastDirectoryEntry(unsigned char* entry) {
@@ -241,16 +265,6 @@ FATXPartition *OpenFATXPartition(int nDriveIndex,
 #ifdef FATX_DEBUG
 	printk("OpenFATXPartition : Allocating chaintable struct\n");
 #endif
-  	// Load the cluster chain map table
-	partition->clusterChainMap.words = (u_int16_t*) malloc(chainTableSize);
-    	if (partition->clusterChainMap.words == NULL) {
-		VIDEO_ATTR=0xffe8e8e8;
-#ifdef FATX_INFO
-		printk("OpenFATXPartition : Out of memory\n");
-#endif
-		return NULL;
-	}
-
 #ifdef FATX_DEBUG
 	printk("Part stats : CL Count	%d \n", partition->clusterCount);
 	printk("Part stats : CL Size	%d \n", partition->clusterSize);
@@ -259,22 +273,43 @@ FATXPartition *OpenFATXPartition(int nDriveIndex,
 	printk("Part stats : Part Size	%d \n", partition->partitionSize);
 #endif
 
-	readSize = FATXRawRead(nDriveIndex, partitionOffset, FATX_PARTITION_HEADERSIZE,
-			chainTableSize, (char *)partition->clusterChainMap.words);
+	partition->cluster1Address = ( ( FATX_PARTITION_HEADERSIZE + chainTableSize) );
 
-    	if (readSize != chainTableSize) {
-		VIDEO_ATTR=0xffe8e8e8;
+	if (chainTableSize <= FATX_MAX_EAGER_CHAINTABLE) {
+		// Load smaller chain maps up front. Large 1 KB-cluster disks are read lazily.
+		partition->clusterChainMap.words = (u_int16_t*) malloc(chainTableSize);
+	    	if (partition->clusterChainMap.words == NULL) {
+			VIDEO_ATTR=0xffe8e8e8;
 #ifdef FATX_INFO
-		printk("Out of data while reading cluster chain map table\n");
+			printk("OpenFATXPartition : Out of memory\n");
+#endif
+			free(partition);
+			return NULL;
+		}
+
+		readSize = FATXRawRead(nDriveIndex, partitionOffset, FATX_PARTITION_HEADERSIZE,
+				chainTableSize, (char *)partition->clusterChainMap.words);
+
+	    	if (readSize != chainTableSize) {
+			VIDEO_ATTR=0xffe8e8e8;
+#ifdef FATX_INFO
+			printk("Out of data while reading cluster chain map table\n");
+#endif
+		}
+#ifdef FATX_PROGRESS
+		printk("FATX: table read %d/%d cluster1=0x%X\n",
+			readSize,
+			chainTableSize,
+			FATX_PARTITION_HEADERSIZE + chainTableSize);
+#endif
+	} else {
+		partition->clusterChainMap.words = NULL;
+#ifdef FATX_PROGRESS
+		printk("FATX: lazy table %d cluster1=0x%X\n",
+			chainTableSize,
+			FATX_PARTITION_HEADERSIZE + chainTableSize);
 #endif
 	}
-#ifdef FATX_PROGRESS
-	printk("FATX: table read %d/%d cluster1=0x%X\n",
-		readSize,
-		chainTableSize,
-		FATX_PARTITION_HEADERSIZE + chainTableSize);
-#endif
-	partition->cluster1Address = ( ( FATX_PARTITION_HEADERSIZE + chainTableSize) );
 
 	return partition;
 }
@@ -640,12 +675,20 @@ u_int32_t getNextClusterInChain(FATXPartition* partition, int clusterId) {
 
 	// get the next ID
 	if (partition->chainMapEntrySize == 2) {
-		nextClusterId = partition->clusterChainMap.words[clusterId];
+		if (partition->clusterChainMap.words) {
+			nextClusterId = partition->clusterChainMap.words[clusterId];
+		} else if (!FATXReadChainMapEntry(partition, clusterId, &nextClusterId)) {
+			return -1;
+		}
 	        eocMarker = 0xffff;
 		rootFatMarker = 0xfff8;
 		maxCluster = 0xfff4;
 	} else if (partition->chainMapEntrySize == 4) {
-		nextClusterId = partition->clusterChainMap.dwords[clusterId];
+		if (partition->clusterChainMap.dwords) {
+			nextClusterId = partition->clusterChainMap.dwords[clusterId];
+		} else if (!FATXReadChainMapEntry(partition, clusterId, &nextClusterId)) {
+			return -1;
+		}
 		eocMarker = 0xffffffff;
 		rootFatMarker = 0xfffffff8;
 		maxCluster = 0xfffffff4;
