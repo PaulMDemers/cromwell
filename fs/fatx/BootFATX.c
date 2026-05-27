@@ -12,7 +12,7 @@
 
 static unsigned char fileLoadClusterData[0x10000];
 
-#define FATX_MAX_EAGER_CHAINTABLE (4 * 1024 * 1024)
+#define FATX_MAX_EAGER_CHAINTABLE (256 * 1024)
 
 static int FATXNameEquals(const char *left, const char *right) {
 	while (*left && *right) {
@@ -26,23 +26,50 @@ static int FATXNameEquals(const char *left, const char *right) {
 }
 
 static int FATXReadChainMapEntry(FATXPartition *partition, int clusterId, u_int32_t *value) {
-	unsigned char entry[4];
-	unsigned long long offset;
+	unsigned int entryOffset;
+	unsigned int cacheOffset;
+	unsigned int cacheIndex;
+	unsigned int cacheBytes;
 	int readSize;
 
-	offset = FATX_PARTITION_HEADERSIZE + ((unsigned long long)clusterId * partition->chainMapEntrySize);
-	readSize = FATXRawRead(partition->nDriveIndex, partition->partitionStart,
-			offset, partition->chainMapEntrySize, (char *)entry);
-	if (readSize != partition->chainMapEntrySize) {
+	entryOffset = clusterId * partition->chainMapEntrySize;
+	cacheOffset = entryOffset & ~(FATX_CHAINTABLE_BLOCKSIZE - 1);
+	cacheIndex = entryOffset - cacheOffset;
+
+	if (!partition->chainMapCacheValid || partition->chainMapCacheOffset != cacheOffset) {
+		cacheBytes = FATX_CHAINTABLE_BLOCKSIZE;
+		if (cacheOffset + cacheBytes > partition->chainMapSize) {
+			cacheBytes = partition->chainMapSize - cacheOffset;
+		}
+		readSize = FATXRawRead(partition->nDriveIndex, partition->partitionStart,
+				FATX_PARTITION_HEADERSIZE + cacheOffset, cacheBytes,
+				(char *)partition->chainMapCache);
+		if (readSize != cacheBytes) {
+			VIDEO_ATTR=0xffe8e8e8;
+			printk("FATX: chain page read failed cluster=%i read=%d/%d\n",
+				clusterId, readSize, cacheBytes);
+			partition->chainMapCacheValid = 0;
+			return false;
+		}
+		partition->chainMapCacheOffset = cacheOffset;
+		partition->chainMapCacheBytes = cacheBytes;
+		partition->chainMapCacheValid = 1;
+	}
+
+	if (cacheIndex + partition->chainMapEntrySize > partition->chainMapCacheBytes) {
 		VIDEO_ATTR=0xffe8e8e8;
-		printk("FATX: chain read failed cluster=%i read=%d\n", clusterId, readSize);
+		printk("FATX: chain entry outside cache cluster=%i\n", clusterId);
 		return false;
 	}
 
 	if (partition->chainMapEntrySize == 2) {
-		*value = entry[0] | (entry[1] << 8);
+		*value = partition->chainMapCache[cacheIndex] |
+				(partition->chainMapCache[cacheIndex + 1] << 8);
 	} else {
-		*value = entry[0] | (entry[1] << 8) | (entry[2] << 16) | (entry[3] << 24);
+		*value = partition->chainMapCache[cacheIndex] |
+				(partition->chainMapCache[cacheIndex + 1] << 8) |
+				(partition->chainMapCache[cacheIndex + 2] << 16) |
+				(partition->chainMapCache[cacheIndex + 3] << 24);
 	}
 	return true;
 }
@@ -244,6 +271,7 @@ FATXPartition *OpenFATXPartition(int nDriveIndex,
 	partition->clusterSize = sectorsPerCluster * 512;
 	partition->clusterCount = (u_int32_t)(partition->partitionSize >> (9 + clusterShift));
 	partition->chainMapEntrySize = (partition->clusterCount >= 0xfff4) ? 4 : 2;
+	partition->chainMapCacheValid = 0;
 
 	// Now, work out the size of the cluster chain map table
 	chainTableSize = partition->clusterCount * partition->chainMapEntrySize;
@@ -252,6 +280,7 @@ FATXPartition *OpenFATXPartition(int nDriveIndex,
 		chainTableSize = ((chainTableSize / FATX_CHAINTABLE_BLOCKSIZE) + 1)
 				* FATX_CHAINTABLE_BLOCKSIZE;
 	}
+	partition->chainMapSize = chainTableSize;
 
 #ifdef FATX_PROGRESS
 	printk("FATX: spc=%d csize=%d clusters=%d ent=%d table=%d\n",
@@ -307,8 +336,9 @@ FATXPartition *OpenFATXPartition(int nDriveIndex,
 lazy_chain_map:
 		partition->clusterChainMap.words = NULL;
 #ifdef FATX_PROGRESS
-		printk("FATX: lazy table %d cluster1=0x%X\n",
+		printk("FATX: cached lazy table %d page=%d cluster1=0x%X\n",
 			chainTableSize,
+			FATX_CHAINTABLE_BLOCKSIZE,
 			FATX_PARTITION_HEADERSIZE + chainTableSize);
 #endif
 	}

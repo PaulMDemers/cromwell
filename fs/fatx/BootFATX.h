@@ -79,11 +79,20 @@ typedef struct {
   // Size of entries in the cluster chain map
   u_int32_t chainMapEntrySize;
 
+  // Size of the cluster chain map, rounded to FATX_CHAINTABLE_BLOCKSIZE
+  u_int32_t chainMapSize;
+
   // The cluster chain map table (which may be in words OR dwords)
   union {
     u_int16_t *words;
     u_int32_t *dwords;
   } clusterChainMap;
+
+  // One FATX chain-table page for lazy cached reads.
+  u8 chainMapCache[FATX_CHAINTABLE_BLOCKSIZE];
+  u_int32_t chainMapCacheOffset;
+  u_int32_t chainMapCacheBytes;
+  int chainMapCacheValid;
 
   // Address of cluster 1
   u_int64_t cluster1Address;
