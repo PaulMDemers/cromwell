@@ -464,11 +464,18 @@ void _DumpFATXTree(FATXPartition* partition, int clusterId, int nesting) {
 
 int FATXLoadFromDisk(FATXPartition* partition, FATXFILEINFO *fileinfo) {
 
-	unsigned char *clusterData = fileLoadClusterData;
 	int fileSize = fileinfo->fileSize;
-	int written;
 	int clusterId = fileinfo->clusterId;
 	u8 *ptr;
+	int nextClusterId;
+	int probeClusterId;
+	int haveNextClusterId;
+	int startClusterId;
+	int runClusters;
+	int runBytes;
+	int readBytes;
+	int readSize;
+	u_int64_t clusterAddress;
 
 	if (partition->clusterSize > sizeof(fileLoadClusterData)) {
 		printk("FATXLoadFromDisk : Cluster size %d too large\n", partition->clusterSize);
@@ -479,28 +486,52 @@ int FATXLoadFromDisk(FATXPartition* partition, FATXFILEINFO *fileinfo) {
 	ptr = fileinfo->buffer;
 
 	printk(" size=%d cluster=%d", fileinfo->fileSize, clusterId);
-	// loop, outputting clusters
+	// Loop through the cluster chain, coalescing contiguous cluster runs.
 	while(clusterId != -1) {
-		// Load the cluster data
-		if (!LoadFATXCluster(partition, clusterId, clusterData)) {
+		startClusterId = clusterId;
+		runClusters = 1;
+		runBytes = partition->clusterSize;
+		nextClusterId = -1;
+		haveNextClusterId = 0;
+
+		while (runBytes < (64 * 1024) && runBytes < fileSize) {
+			probeClusterId = getNextClusterInChain(partition, clusterId);
+			if (probeClusterId != clusterId + 1) {
+				nextClusterId = probeClusterId;
+				haveNextClusterId = 1;
+				break;
+			}
+			clusterId = probeClusterId;
+			runClusters++;
+			runBytes += partition->clusterSize;
+		}
+
+		readBytes = (fileSize <= runBytes) ? fileSize : runBytes;
+		clusterAddress = partition->cluster1Address +
+				((unsigned long long)(startClusterId - 1) * partition->clusterSize);
+		readSize = FATXRawRead(partition->nDriveIndex, partition->partitionStart,
+				clusterAddress, readBytes, (char *)ptr);
+		if (readSize != readBytes) {
+			printk("FATXLoadFromDisk : Out of data while reading run cluster=%i read=%d/%d\n",
+				startClusterId, readSize, readBytes);
 			return false;
 		}
 
-		// Now, output it
-		written = (fileSize <= partition->clusterSize) ? fileSize : partition->clusterSize;
-		memcpy(ptr,clusterData,written);
-		fileSize -= written;
-		fileinfo->fileRead+=written;
-		ptr+=written;
-		if ((fileinfo->fileRead % (512 * 1024)) == 0 || fileSize == 0) {
+		if (!haveNextClusterId && fileSize > readBytes) {
+			nextClusterId = getNextClusterInChain(partition, clusterId);
+		}
+
+		fileSize -= readBytes;
+		fileinfo->fileRead += readBytes;
+		ptr += readBytes;
+		if ((fileinfo->fileRead % (64 * 1024)) == 0 || fileSize == 0) {
 			printk(" [%d]", fileinfo->fileRead);
 		}
 		if (fileSize == 0) {
 			break;
 		}
 
-		// Find next cluster
-		clusterId = getNextClusterInChain(partition, clusterId);
+		clusterId = nextClusterId;
 	}
 
 	// check we actually found enough data
