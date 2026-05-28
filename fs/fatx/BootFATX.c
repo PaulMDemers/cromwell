@@ -11,7 +11,6 @@
 //#define FATX_INFO
 
 static unsigned char fileLoadClusterData[0x10000];
-
 #define FATX_MAX_EAGER_CHAINTABLE (256 * 1024)
 
 static int FATXNameEquals(const char *left, const char *right) {
@@ -91,25 +90,31 @@ int LoadFATXFilefixed(FATXPartition *partition, char *filename, FATXFILEINFO *fi
 	if(partition == NULL) {
 		VIDEO_ATTR=0xffe8e8e8;
 	} else {
+		printk("\nFATX: fixed open %s", filename);
 		if(FATXFindFile(partition,filename,FATX_ROOT_FAT_CLUSTER,fileinfo)) {
 #ifdef FATX_DEBUG
 			printk("ClusterID : %d\n",fileinfo->clusterId);
 			printk("fileSize  : %d\n",fileinfo->fileSize);
 #endif
+			printk("\nFATX: fixed found %s size=%d cluster=%d",
+				filename, fileinfo->fileSize, fileinfo->clusterId);
 			fileinfo->buffer = Position;
 
 			if(FATXLoadFromDisk(partition, fileinfo)) {
+				printk("\nFATX: fixed loaded %s read=%d", filename, fileinfo->fileRead);
 				return true;
 			} else {
 #ifdef FATX_INFO
 				printk("LoadFATXFile : error loading %s\n",filename);
 #endif
+				printk("\nFATX: fixed load failed %s", filename);
 				return false;
 			}
 		} else {
 #ifdef FATX_INFO
 			printk("LoadFATXFile : file %s not found\n",filename);
 #endif
+			printk("\nFATX: fixed not found %s", filename);
 			return false;
 		}
 	}
@@ -481,6 +486,20 @@ int FATXLoadFromDisk(FATXPartition* partition, FATXFILEINFO *fileinfo) {
 	printk(" size=%d cluster=%d", fileinfo->fileSize, clusterId);
 	// loop, outputting clusters
 	while(clusterId != -1) {
+		if (fileinfo->fileRead == 0) {
+			u_int64_t clusterAddress;
+			unsigned int absSector;
+			unsigned int sectorOffset;
+
+			clusterAddress = partition->cluster1Address +
+				((unsigned long long)(clusterId - 1) * partition->clusterSize);
+			absSector = partition->partitionStart + (clusterAddress / 512);
+			sectorOffset = clusterAddress % 512;
+			printk("\nFATX: read %s c=%d abs=0x%X off=%d len=%d",
+				fileinfo->filename, clusterId, absSector, sectorOffset,
+				partition->clusterSize);
+		}
+
 		// Load the cluster data
 		if (!LoadFATXCluster(partition, clusterId, clusterData)) {
 			return false;
@@ -810,7 +829,7 @@ int FATXRawRead(int drive, int sector, unsigned long long byte_offset, int byte_
 			byte_offset=0;
 			sectorsAdvanced=1;
 		} else {
-			if(nThisTime > 0x4000) nThisTime=0x4000;
+			if(nThisTime > 512) nThisTime=512;
 			if(BootIdeReadSector(drive, buf, sector, 0, nThisTime)) {
 				VIDEO_ATTR=0xffe8e8e8;
 				printk("Unable to get first sector\n");
