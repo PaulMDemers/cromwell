@@ -470,52 +470,58 @@ void _DumpFATXTree(FATXPartition* partition, int clusterId, int nesting) {
 
 int FATXLoadFromDisk(FATXPartition* partition, FATXFILEINFO *fileinfo) {
 
-	unsigned char *clusterData = fileLoadClusterData;
+	unsigned char *sectorData = fileLoadClusterData;
 	int fileSize = fileinfo->fileSize;
 	int written;
 	int clusterId = fileinfo->clusterId;
+	int clusterOffset;
+	int sectorRead;
 	u8 *ptr;
-
-	if (partition->clusterSize > sizeof(fileLoadClusterData)) {
-		printk("FATXLoadFromDisk : Cluster size %d too large\n", partition->clusterSize);
-		return false;
-	}
 
 	fileinfo->fileRead = 0;
 	ptr = fileinfo->buffer;
 
-	printk(" size=%d cluster=%d", fileinfo->fileSize, clusterId);
+	printk("\nFATX: file start %s sz=%d c=%d",
+		fileinfo->filename, fileinfo->fileSize, clusterId);
 	// loop, outputting clusters
 	while(clusterId != -1) {
-		if (fileinfo->fileRead == 0) {
-			u_int64_t clusterAddress;
-			unsigned int absSector;
-			unsigned int sectorOffset;
+		u_int64_t clusterAddress;
+		unsigned int absSector;
 
-			clusterAddress = partition->cluster1Address +
-				((unsigned long long)(clusterId - 1) * partition->clusterSize);
-			absSector = partition->partitionStart + (clusterAddress / 512);
-			sectorOffset = clusterAddress % 512;
-			printk("\nFATX: read %s c=%d abs=0x%X off=%d len=%d",
-				fileinfo->filename, clusterId, absSector, sectorOffset,
-				partition->clusterSize);
+		clusterAddress = partition->cluster1Address +
+			((unsigned long long)(clusterId - 1) * partition->clusterSize);
+		absSector = partition->partitionStart + (clusterAddress / 512);
+
+		if ((fileinfo->fileRead % (512 * 1024)) == 0) {
+			printk("\nFATX: file at %s read=%d c=%d abs=0x%X",
+				fileinfo->filename, fileinfo->fileRead, clusterId, absSector);
 		}
 
-		// Load the cluster data
-		if (!LoadFATXCluster(partition, clusterId, clusterData)) {
-			return false;
+		for (clusterOffset = 0; clusterOffset < partition->clusterSize && fileSize > 0;
+				clusterOffset += sizeof(findFileSectorData)) {
+			if (fileinfo->fileRead < 4096) {
+				printk("\nFATX: file sec c=%d o=%d", clusterId, clusterOffset);
+			}
+			sectorRead = FATXRawRead(partition->nDriveIndex, partition->partitionStart,
+				clusterAddress + clusterOffset, sizeof(findFileSectorData),
+				(char *)sectorData);
+			if (sectorRead != sizeof(findFileSectorData)) {
+				printk(" fail %d", sectorRead);
+				return false;
+			}
+			if (fileinfo->fileRead < 4096) {
+				printk(" ok");
+			}
+
+			written = (fileSize <= sizeof(findFileSectorData)) ? fileSize : sizeof(findFileSectorData);
+			memcpy(ptr, sectorData, written);
+			fileSize -= written;
+			fileinfo->fileRead += written;
+			ptr += written;
 		}
 
-		// Now, output it
-		written = (fileSize <= partition->clusterSize) ? fileSize : partition->clusterSize;
-		memcpy(ptr,clusterData,written);
-		fileSize -= written;
-		fileinfo->fileRead+=written;
-		ptr+=written;
-		if ((fileinfo->fileRead % (512 * 1024)) == 0 || fileSize == 0) {
-			printk(" [%d]", fileinfo->fileRead);
-		}
 		if (fileSize == 0) {
+			printk("\nFATX: file done %s read=%d", fileinfo->filename, fileinfo->fileRead);
 			break;
 		}
 
