@@ -11,7 +11,7 @@
 //#define FATX_INFO
 
 static unsigned char fileLoadClusterData[0x10000];
-static unsigned char findFileClusterData[0x10000];
+static unsigned char findFileSectorData[512];
 #define FATX_MAX_EAGER_CHAINTABLE (256 * 1024)
 
 static int FATXNameEquals(const char *left, const char *right) {
@@ -566,23 +566,22 @@ int _FATXFindFile(FATXPartition* partition,
                     char* filename,
                     int clusterId, FATXFILEINFO *fileinfo) {
 	unsigned char* curEntry;
-	unsigned char *clusterData = findFileClusterData;
+	unsigned char *sectorData = findFileSectorData;
 	int i = 0;
+	int j = 0;
+	int sectorOffset = 0;
+	int sectorRead = 0;
 	int endOfDirectory;
 	u_int32_t filenameSize;
 	u_int32_t flags;
 	u_int32_t entryClusterId;
 	u_int32_t fileSize;
+	u_int64_t clusterAddress;
 	char seekFilename[50];
 	char foundFilename[50];
 	char* slashPos;
 	int lookForDirectory = 0;
 	int lookForFile = 0;
-
-	if (partition->clusterSize > sizeof(findFileClusterData)) {
-		printk("\nFATX: find cluster too large %d", partition->clusterSize);
-		return false;
-	}
 
 	// work out the filename we're looking for
 	slashPos = strrchr0(filename, '/');
@@ -625,81 +624,95 @@ int _FATXFindFile(FATXPartition* partition,
 	// OK, search through directory entries
 	endOfDirectory = 0;
 	while(clusterId != -1) {
-    		// load cluster data
-		printk("\nFATX: find load c=%d", clusterId);
-    		if (!LoadFATXCluster(partition, clusterId, clusterData)) {
-			return false;
-		}
-		printk(" ok");
+		clusterAddress = partition->cluster1Address +
+			((unsigned long long)(clusterId - 1) * partition->clusterSize);
 
-		// loop through it, outputing entries
-		for(i=0; i< partition->clusterSize / FATX_DIRECTORYENTRY_SIZE; i++) {
-			// work out the currentEntry
-			curEntry = clusterData + (i * FATX_DIRECTORYENTRY_SIZE);
-
-			// first of all, check that it isn't an end of directory marker
-			if (checkForLastDirectoryEntry(curEntry)) {
-				endOfDirectory = 1;
-				break;
-			}
-
-			// get the filename size
-			filenameSize = curEntry[0];
-
-			// check if file is deleted
-			if (filenameSize == 0xE5) {
-				continue;
-			}
-
-			// check size is OK
-			if ((filenameSize < 1) || (filenameSize > FATX_FILENAME_MAX)) {
-#ifdef FATX_INFO
-				printk("Invalid filename size: %i\n", filenameSize);
-#endif
+		for(sectorOffset=0; sectorOffset < partition->clusterSize; sectorOffset += sizeof(findFileSectorData)) {
+	    		// load only one directory sector at a time so lookup can stop early
+			printk("\nFATX: find sec c=%d o=%d", clusterId, sectorOffset);
+			sectorRead = FATXRawRead(partition->nDriveIndex, partition->partitionStart,
+				clusterAddress + sectorOffset, sizeof(findFileSectorData),
+				(char *)sectorData);
+			if (sectorRead != sizeof(findFileSectorData)) {
+				printk(" fail %d", sectorRead);
 				return false;
 			}
+			printk(" ok");
 
-			// extract the filename
-			memset(foundFilename, 0, 50);
-			memcpy(foundFilename, curEntry+2, filenameSize);
-			foundFilename[filenameSize] = 0;
+			// loop through this sector's entries
+			for(j=0; j< sizeof(findFileSectorData) / FATX_DIRECTORYENTRY_SIZE; j++) {
+				i = (sectorOffset / FATX_DIRECTORYENTRY_SIZE) + j;
+				// work out the currentEntry
+				curEntry = sectorData + (j * FATX_DIRECTORYENTRY_SIZE);
 
-			// get rest of data
-			flags = curEntry[1];
-			entryClusterId = *((u_int32_t*) (curEntry + 0x2c));
-			fileSize = *((u_int32_t*) (curEntry + 0x30));
-
-			// is it what we're looking for...
-			if (FATXNameEquals(foundFilename, seekFilename)) {
-				printk("\nFATX: find match %s c=%d sz=%d",
-					foundFilename, entryClusterId, fileSize);
-				// if we're looking for a directory and found a directory
-				if (lookForDirectory) {
-					if (flags & FATX_FILEATTR_DIRECTORY) {
-						return _FATXFindFile(partition, slashPos+1, entryClusterId,fileinfo);
-					} else {
-#ifdef FATX_INFO
-						printk("File not found\n");
-#endif
-						return false;
-					}
+				// first of all, check that it isn't an end of directory marker
+				if (checkForLastDirectoryEntry(curEntry)) {
+					endOfDirectory = 1;
+					break;
 				}
 
-				// if we're looking for a file and found a file
-				if (lookForFile) {
-					if (!(flags & FATX_FILEATTR_DIRECTORY)) {
-						fileinfo->clusterId = entryClusterId;
-						fileinfo->fileSize = fileSize;
-						memset(fileinfo->filename,0,sizeof(fileinfo->filename));
-						strcpy(fileinfo->filename,filename);
-						return true;
-					} else {
+				// get the filename size
+				filenameSize = curEntry[0];
+
+				// check if file is deleted
+				if (filenameSize == 0xE5) {
+					continue;
+				}
+
+				// check size is OK
+				if ((filenameSize < 1) || (filenameSize > FATX_FILENAME_MAX)) {
 #ifdef FATX_INFO
-						printk("File not found %s\n",filename);
+					printk("Invalid filename size: %i\n", filenameSize);
 #endif
-						return false;
+					return false;
+				}
+
+				// extract the filename
+				memset(foundFilename, 0, 50);
+				memcpy(foundFilename, curEntry+2, filenameSize);
+				foundFilename[filenameSize] = 0;
+
+				// get rest of data
+				flags = curEntry[1];
+				entryClusterId = *((u_int32_t*) (curEntry + 0x2c));
+				fileSize = *((u_int32_t*) (curEntry + 0x30));
+
+				// is it what we're looking for...
+				if (FATXNameEquals(foundFilename, seekFilename)) {
+					printk("\nFATX: find match %s e=%d c=%d sz=%d",
+						foundFilename, i, entryClusterId, fileSize);
+					// if we're looking for a directory and found a directory
+					if (lookForDirectory) {
+						if (flags & FATX_FILEATTR_DIRECTORY) {
+							return _FATXFindFile(partition, slashPos+1, entryClusterId,fileinfo);
+						} else {
+#ifdef FATX_INFO
+							printk("File not found\n");
+#endif
+							return false;
+						}
+					}
+
+					// if we're looking for a file and found a file
+					if (lookForFile) {
+						if (!(flags & FATX_FILEATTR_DIRECTORY)) {
+							fileinfo->clusterId = entryClusterId;
+							fileinfo->fileSize = fileSize;
+							memset(fileinfo->filename,0,sizeof(fileinfo->filename));
+							strcpy(fileinfo->filename,filename);
+							return true;
+						} else {
+#ifdef FATX_INFO
+							printk("File not found %s\n",filename);
+#endif
+							return false;
+						}
 					}
 				}
+			}
+
+			if (endOfDirectory) {
+				break;
 			}
 		}
 
