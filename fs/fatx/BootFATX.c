@@ -11,6 +11,7 @@
 //#define FATX_INFO
 
 static unsigned char fileLoadClusterData[0x10000];
+static unsigned char findFileClusterData[0x10000];
 #define FATX_MAX_EAGER_CHAINTABLE (256 * 1024)
 
 static int FATXNameEquals(const char *left, const char *right) {
@@ -565,7 +566,7 @@ int _FATXFindFile(FATXPartition* partition,
                     char* filename,
                     int clusterId, FATXFILEINFO *fileinfo) {
 	unsigned char* curEntry;
-	unsigned char clusterData[partition->clusterSize];
+	unsigned char *clusterData = findFileClusterData;
 	int i = 0;
 	int endOfDirectory;
 	u_int32_t filenameSize;
@@ -578,6 +579,10 @@ int _FATXFindFile(FATXPartition* partition,
 	int lookForDirectory = 0;
 	int lookForFile = 0;
 
+	if (partition->clusterSize > sizeof(findFileClusterData)) {
+		printk("\nFATX: find cluster too large %d", partition->clusterSize);
+		return false;
+	}
 
 	// work out the filename we're looking for
 	slashPos = strrchr0(filename, '/');
@@ -616,13 +621,16 @@ int _FATXFindFile(FATXPartition* partition,
 	VIDEO_ATTR=0xffc8c8c8;
 	printk("_FATXFindFile : %s\n",filename);
 #endif
+	printk("\nFATX: find scan seek=%s c=%d", seekFilename, clusterId);
 	// OK, search through directory entries
 	endOfDirectory = 0;
 	while(clusterId != -1) {
     		// load cluster data
+		printk("\nFATX: find load c=%d", clusterId);
     		if (!LoadFATXCluster(partition, clusterId, clusterData)) {
 			return false;
 		}
+		printk(" ok");
 
 		// loop through it, outputing entries
 		for(i=0; i< partition->clusterSize / FATX_DIRECTORYENTRY_SIZE; i++) {
@@ -663,6 +671,8 @@ int _FATXFindFile(FATXPartition* partition,
 
 			// is it what we're looking for...
 			if (FATXNameEquals(foundFilename, seekFilename)) {
+				printk("\nFATX: find match %s c=%d sz=%d",
+					foundFilename, entryClusterId, fileSize);
 				// if we're looking for a directory and found a directory
 				if (lookForDirectory) {
 					if (flags & FATX_FILEATTR_DIRECTORY) {
@@ -699,7 +709,9 @@ int _FATXFindFile(FATXPartition* partition,
 		}
 
 		// Find next cluster
+		printk("\nFATX: find next from c=%d", clusterId);
 		clusterId = getNextClusterInChain(partition, clusterId);
+		printk(" -> %d", clusterId);
 	}
 
 	// not found it!
