@@ -846,7 +846,9 @@ int BootIdeReadSector(int nDriveIndex, void * pbBuffer, unsigned int block, int 
 	int copyBytes;
 	int sectorOffset;
 	int traceRead;
-	unsigned char ideReadCommand = IDE_CMD_READ_MULTIPLE;
+	// Use ordinary READ SECTORS unless LBA48 forces READ EXT below. READ MULTIPLE
+	// is timing-sensitive on some softmod HDDs unless multiple mode is set first.
+	unsigned char ideReadCommand = IDE_CMD_READ_SECTORS_RETRY;
 
 	if(!tsaHarddiskInfo[nDriveIndex].m_fDriveExists) return 4;
 
@@ -1008,17 +1010,10 @@ int BootIdeReadSector(int nDriveIndex, void * pbBuffer, unsigned int block, int 
 
 	if(BootIdeIssueAtaCommand(uIoBase, ideReadCommand, &tsicp))
 	{
-		if (ideReadCommand == IDE_CMD_READ_MULTIPLE) {
-			ideReadCommand = IDE_CMD_READ_SECTORS_RETRY;
-			if (BootIdeIssueAtaCommand(uIoBase, ideReadCommand, &tsicp) == 0) {
-				goto read_data;
-			}
-		}
 		printk("ide error %02X...\n", IoInputByte(IDE_REG_ERROR(uIoBase)));
 		return 1;
 	}
 
-read_data:
 	traceRead = 0;
 	if (traceRead) {
 		printk("\nB%X/%d", block, sectorCount);
