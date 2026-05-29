@@ -114,7 +114,7 @@ int LoadFATXFilefixed(FATXPartition *partition, char *filename, FATXFILEINFO *fi
 	} else {
 		g_traceBootPayload = FATXIsBootPayloadName(filename);
 		if (g_traceBootPayload) {
-			BootIdeSetReadTrace(1, 128);
+			BootIdeSetReadTrace(0, 0);
 		}
 		printk("\nFATX: fixed open %s", filename);
 		if(FATXFindFile(partition,filename,FATX_ROOT_FAT_CLUSTER,fileinfo)) {
@@ -531,25 +531,21 @@ int FATXLoadFromDisk(FATXPartition* partition, FATXFILEINFO *fileinfo) {
 			((unsigned long long)(clusterId - 1) * partition->clusterSize);
 		absSector = partition->partitionStart + (clusterAddress / 512);
 
-		if (g_traceBootPayload && (fileinfo->fileRead % (512 * 1024)) == 0) {
-			printk("\nFATX: file at %s read=%d c=%d abs=0x%X",
+		if (g_traceBootPayload && (fileinfo->fileRead % (64 * 1024)) == 0) {
+			printk("\nFATX: prog %s r=%d c=%d a=%X",
 				fileinfo->filename, fileinfo->fileRead, clusterId, absSector);
 		}
 
 		for (clusterOffset = 0; clusterOffset < partition->clusterSize && fileSize > 0;
 				clusterOffset += sizeof(findFileSectorData)) {
-			if (g_traceBootPayload && fileinfo->fileRead < 4096) {
-				printk("\nFATX: file sec c=%d o=%d", clusterId, clusterOffset);
-			}
 			sectorRead = FATXRawRead(partition->nDriveIndex, partition->partitionStart,
 				clusterAddress + clusterOffset, sizeof(findFileSectorData),
 				(char *)sectorData);
 			if (sectorRead != sizeof(findFileSectorData)) {
-				printk(" fail %d", sectorRead);
+				printk("\nFATX: file fail %s r=%d c=%d o=%d got=%d",
+					fileinfo->filename, fileinfo->fileRead, clusterId,
+					clusterOffset, sectorRead);
 				return false;
-			}
-			if (g_traceBootPayload && fileinfo->fileRead < 4096) {
-				printk(" ok");
 			}
 
 			written = (fileSize <= sizeof(findFileSectorData)) ? fileSize : sizeof(findFileSectorData);
