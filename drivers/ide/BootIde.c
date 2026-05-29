@@ -58,6 +58,8 @@ typedef struct {
 #define printk_debug bprintf
 
 tsHarddiskInfo tsaHarddiskInfo[2];  // static struct stores data about attached drives
+static int g_hddReadTraceEnabled = 0;
+static int g_hddReadTraceLimit = 0;
 static int g_hddReadTraceCount = 0;
 
 const char * const szaSenseKeys[] = {
@@ -66,6 +68,13 @@ const char * const szaSenseKeys[] = {
 	"Reserved 8", "Reserved 9", "Reserved 0xa", "Aborted Command",
 	"Miscompare", "Reserved 0xf"
 };
+
+void BootIdeSetReadTrace(int enabled, int limit)
+{
+	g_hddReadTraceEnabled = enabled;
+	g_hddReadTraceLimit = limit;
+	g_hddReadTraceCount = 0;
+}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //  Helper routines
@@ -1009,7 +1018,9 @@ int BootIdeReadSector(int nDriveIndex, void * pbBuffer, unsigned int block, int 
 		}
         }
 
-	traceRead = (!tsaHarddiskInfo[nDriveIndex].m_fAtapi && g_hddReadTraceCount < 96);
+	traceRead = (g_hddReadTraceEnabled &&
+		!tsaHarddiskInfo[nDriveIndex].m_fAtapi &&
+		g_hddReadTraceCount < g_hddReadTraceLimit);
 	if (traceRead) {
 		printk("\nIDE#%d issue b=%X n=%d cmd=%02X", g_hddReadTraceCount, block, sectorCount, ideReadCommand);
 	}

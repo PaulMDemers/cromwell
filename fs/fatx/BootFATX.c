@@ -12,6 +12,7 @@
 
 static unsigned char fileLoadClusterData[0x10000];
 static unsigned char findFileSectorData[512];
+static int g_traceBootPayload = 0;
 #define FATX_MAX_EAGER_CHAINTABLE (256 * 1024)
 
 static int FATXNameEquals(const char *left, const char *right) {
@@ -23,6 +24,26 @@ static int FATXNameEquals(const char *left, const char *right) {
 		right++;
 	}
 	return *left == 0 && *right == 0;
+}
+
+static int FATXIsBootPayloadName(const char *filename) {
+	const char *name = filename;
+
+	if (!name) {
+		return 0;
+	}
+	while (*name == '/' || *name == '\\') {
+		name++;
+	}
+
+	return FATXNameEquals(name, "devkrnl") ||
+		FATXNameEquals(name, "devinit") ||
+		FATXNameEquals(name, "xkrnl") ||
+		FATXNameEquals(name, "xinit") ||
+		FATXNameEquals(name, "pluskrnl") ||
+		FATXNameEquals(name, "plusinit") ||
+		FATXNameEquals(name, "rwkrnl") ||
+		FATXNameEquals(name, "rwinit");
 }
 
 static int FATXReadChainMapEntry(FATXPartition *partition, int clusterId, u_int32_t *value) {
@@ -91,6 +112,10 @@ int LoadFATXFilefixed(FATXPartition *partition, char *filename, FATXFILEINFO *fi
 	if(partition == NULL) {
 		VIDEO_ATTR=0xffe8e8e8;
 	} else {
+		g_traceBootPayload = FATXIsBootPayloadName(filename);
+		if (g_traceBootPayload) {
+			BootIdeSetReadTrace(1, 128);
+		}
 		printk("\nFATX: fixed open %s", filename);
 		if(FATXFindFile(partition,filename,FATX_ROOT_FAT_CLUSTER,fileinfo)) {
 #ifdef FATX_DEBUG
@@ -103,12 +128,20 @@ int LoadFATXFilefixed(FATXPartition *partition, char *filename, FATXFILEINFO *fi
 
 			if(FATXLoadFromDisk(partition, fileinfo)) {
 				printk("\nFATX: fixed loaded %s read=%d", filename, fileinfo->fileRead);
+				if (g_traceBootPayload) {
+					BootIdeSetReadTrace(0, 0);
+					g_traceBootPayload = 0;
+				}
 				return true;
 			} else {
 #ifdef FATX_INFO
 				printk("LoadFATXFile : error loading %s\n",filename);
 #endif
 				printk("\nFATX: fixed load failed %s", filename);
+				if (g_traceBootPayload) {
+					BootIdeSetReadTrace(0, 0);
+					g_traceBootPayload = 0;
+				}
 				return false;
 			}
 		} else {
@@ -116,6 +149,10 @@ int LoadFATXFilefixed(FATXPartition *partition, char *filename, FATXFILEINFO *fi
 			printk("LoadFATXFile : file %s not found\n",filename);
 #endif
 			printk("\nFATX: fixed not found %s", filename);
+			if (g_traceBootPayload) {
+				BootIdeSetReadTrace(0, 0);
+				g_traceBootPayload = 0;
+			}
 			return false;
 		}
 	}
@@ -481,8 +518,10 @@ int FATXLoadFromDisk(FATXPartition* partition, FATXFILEINFO *fileinfo) {
 	fileinfo->fileRead = 0;
 	ptr = fileinfo->buffer;
 
-	printk("\nFATX: file start %s sz=%d c=%d",
-		fileinfo->filename, fileinfo->fileSize, clusterId);
+	if (g_traceBootPayload) {
+		printk("\nFATX: file start %s sz=%d c=%d",
+			fileinfo->filename, fileinfo->fileSize, clusterId);
+	}
 	// loop, outputting clusters
 	while(clusterId != -1) {
 		u_int64_t clusterAddress;
@@ -492,14 +531,14 @@ int FATXLoadFromDisk(FATXPartition* partition, FATXFILEINFO *fileinfo) {
 			((unsigned long long)(clusterId - 1) * partition->clusterSize);
 		absSector = partition->partitionStart + (clusterAddress / 512);
 
-		if ((fileinfo->fileRead % (512 * 1024)) == 0) {
+		if (g_traceBootPayload && (fileinfo->fileRead % (512 * 1024)) == 0) {
 			printk("\nFATX: file at %s read=%d c=%d abs=0x%X",
 				fileinfo->filename, fileinfo->fileRead, clusterId, absSector);
 		}
 
 		for (clusterOffset = 0; clusterOffset < partition->clusterSize && fileSize > 0;
 				clusterOffset += sizeof(findFileSectorData)) {
-			if (fileinfo->fileRead < 4096) {
+			if (g_traceBootPayload && fileinfo->fileRead < 4096) {
 				printk("\nFATX: file sec c=%d o=%d", clusterId, clusterOffset);
 			}
 			sectorRead = FATXRawRead(partition->nDriveIndex, partition->partitionStart,
@@ -509,7 +548,7 @@ int FATXLoadFromDisk(FATXPartition* partition, FATXFILEINFO *fileinfo) {
 				printk(" fail %d", sectorRead);
 				return false;
 			}
-			if (fileinfo->fileRead < 4096) {
+			if (g_traceBootPayload && fileinfo->fileRead < 4096) {
 				printk(" ok");
 			}
 
@@ -521,7 +560,9 @@ int FATXLoadFromDisk(FATXPartition* partition, FATXFILEINFO *fileinfo) {
 		}
 
 		if (fileSize == 0) {
-			printk("\nFATX: file done %s read=%d", fileinfo->filename, fileinfo->fileRead);
+			if (g_traceBootPayload) {
+				printk("\nFATX: file done %s read=%d", fileinfo->filename, fileinfo->fileRead);
+			}
 			break;
 		}
 
@@ -626,7 +667,9 @@ int _FATXFindFile(FATXPartition* partition,
 	VIDEO_ATTR=0xffc8c8c8;
 	printk("_FATXFindFile : %s\n",filename);
 #endif
-	printk("\nFIND %s c=%d", seekFilename, clusterId);
+	if (g_traceBootPayload) {
+		printk("\nFIND %s c=%d", seekFilename, clusterId);
+	}
 	// OK, search through directory entries
 	endOfDirectory = 0;
 	while(clusterId != -1) {
@@ -635,7 +678,9 @@ int _FATXFindFile(FATXPartition* partition,
 
 		for(sectorOffset=0; sectorOffset < partition->clusterSize; sectorOffset += sizeof(findFileSectorData)) {
 	    		// load only one directory sector at a time so lookup can stop early
-			printk("\nFS c=%d o=%d", clusterId, sectorOffset);
+			if (g_traceBootPayload) {
+				printk("\nFS c=%d o=%d", clusterId, sectorOffset);
+			}
 			sectorRead = FATXRawRead(partition->nDriveIndex, partition->partitionStart,
 				clusterAddress + sectorOffset, sizeof(findFileSectorData),
 				(char *)sectorData);
@@ -643,7 +688,9 @@ int _FATXFindFile(FATXPartition* partition,
 				printk(" fail %d", sectorRead);
 				return false;
 			}
-			printk(" ok");
+			if (g_traceBootPayload) {
+				printk(" ok");
+			}
 
 			// loop through this sector's entries
 			for(j=0; j< sizeof(findFileSectorData) / FATX_DIRECTORYENTRY_SIZE; j++) {
@@ -685,8 +732,10 @@ int _FATXFindFile(FATXPartition* partition,
 
 				// is it what we're looking for...
 				if (FATXNameEquals(foundFilename, seekFilename)) {
-					printk("\nFATX: find match %s e=%d c=%d sz=%d",
-						foundFilename, i, entryClusterId, fileSize);
+					if (g_traceBootPayload) {
+						printk("\nFATX: find match %s e=%d c=%d sz=%d",
+							foundFilename, i, entryClusterId, fileSize);
+					}
 					// if we're looking for a directory and found a directory
 					if (lookForDirectory) {
 						if (flags & FATX_FILEATTR_DIRECTORY) {
@@ -728,9 +777,13 @@ int _FATXFindFile(FATXPartition* partition,
 		}
 
 		// Find next cluster
-		printk("\nFATX: find next from c=%d", clusterId);
+		if (g_traceBootPayload) {
+			printk("\nFATX: find next from c=%d", clusterId);
+		}
 		clusterId = getNextClusterInChain(partition, clusterId);
-		printk(" -> %d", clusterId);
+		if (g_traceBootPayload) {
+			printk(" -> %d", clusterId);
+		}
 	}
 
 	// not found it!

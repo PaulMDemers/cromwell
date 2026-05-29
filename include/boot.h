@@ -284,6 +284,7 @@ void I2CModifyBits(u8 bAds, u8 bReg, u8 bData, u8 bMask);
 extern tsHarddiskInfo tsaHarddiskInfo[];  // static struct stores data about attached drives
 int BootIdeInit(void);
 int BootIdeReadSector(int nDriveIndex, void * pbBuffer, unsigned int block, int byte_offset, int n_bytes);
+void BootIdeSetReadTrace(int enabled, int limit);
 int BootIdeBootSectorHddOrElTorito(int nDriveIndex, u8 * pbaResult);
 int BootIdeAtapiAdditionalSenseCode(int nDrive, u8 * pba, int nLengthMaxReturn);
 int BootIdeSetTransferMode(int nIndexDrive, int nMode);

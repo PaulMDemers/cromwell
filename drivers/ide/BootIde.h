@@ -42,6 +42,7 @@ typedef enum {
 
 //Methods
 int BootIdeInit(void);
+void BootIdeSetReadTrace(int enabled, int limit);
 int BootIdeReadSector(int nDriveIndex, void * pbBuffer, unsigned int block, int byte_offset, int n_bytes) ;
 int BootIdeReadData(unsigned uIoBase, void * buf, size_t size);
 int BootIdeIssueAtapiPacketCommandAndPacketLimit(int nDriveIndex, u8 *pAtapiCommandPacket12Bytes, u16 byteCountLimit);
