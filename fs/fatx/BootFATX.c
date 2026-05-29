@@ -513,6 +513,7 @@ int FATXLoadFromDisk(FATXPartition* partition, FATXFILEINFO *fileinfo) {
 	int clusterId = fileinfo->clusterId;
 	int clusterOffset;
 	int sectorRead;
+	int readAttempt;
 	u8 *ptr;
 
 	fileinfo->fileRead = 0;
@@ -538,9 +539,24 @@ int FATXLoadFromDisk(FATXPartition* partition, FATXFILEINFO *fileinfo) {
 
 		for (clusterOffset = 0; clusterOffset < partition->clusterSize && fileSize > 0;
 				clusterOffset += sizeof(findFileSectorData)) {
-			sectorRead = FATXRawRead(partition->nDriveIndex, partition->partitionStart,
-				clusterAddress + clusterOffset, sizeof(findFileSectorData),
-				(char *)sectorData);
+			sectorRead = 0;
+			for (readAttempt = 0; readAttempt < 3; readAttempt++) {
+				if (g_traceBootPayload) {
+					wait_ms(1);
+				}
+				sectorRead = FATXRawRead(partition->nDriveIndex, partition->partitionStart,
+					clusterAddress + clusterOffset, sizeof(findFileSectorData),
+					(char *)sectorData);
+				if (sectorRead == sizeof(findFileSectorData)) {
+					break;
+				}
+				if (g_traceBootPayload) {
+					printk("\nFATX: retry %s r=%d c=%d o=%d got=%d try=%d",
+						fileinfo->filename, fileinfo->fileRead, clusterId,
+						clusterOffset, sectorRead, readAttempt + 1);
+					wait_ms(20);
+				}
+			}
 			if (sectorRead != sizeof(findFileSectorData)) {
 				printk("\nFATX: file fail %s r=%d c=%d o=%d got=%d",
 					fileinfo->filename, fileinfo->fileRead, clusterId,
