@@ -626,7 +626,7 @@ int _FATXFindFile(FATXPartition* partition,
 	VIDEO_ATTR=0xffc8c8c8;
 	printk("_FATXFindFile : %s\n",filename);
 #endif
-	printk("\nFATX: find scan seek=%s c=%d", seekFilename, clusterId);
+	printk("\nFIND %s c=%d", seekFilename, clusterId);
 	// OK, search through directory entries
 	endOfDirectory = 0;
 	while(clusterId != -1) {
@@ -635,7 +635,7 @@ int _FATXFindFile(FATXPartition* partition,
 
 		for(sectorOffset=0; sectorOffset < partition->clusterSize; sectorOffset += sizeof(findFileSectorData)) {
 	    		// load only one directory sector at a time so lookup can stop early
-			printk("\nFATX: find sec c=%d o=%d", clusterId, sectorOffset);
+			printk("\nFS c=%d o=%d", clusterId, sectorOffset);
 			sectorRead = FATXRawRead(partition->nDriveIndex, partition->partitionStart,
 				clusterAddress + sectorOffset, sizeof(findFileSectorData),
 				(char *)sectorData);

@@ -58,6 +58,7 @@ typedef struct {
 #define printk_debug bprintf
 
 tsHarddiskInfo tsaHarddiskInfo[2];  // static struct stores data about attached drives
+static int g_hddReadTraceCount = 0;
 
 const char * const szaSenseKeys[] = {
 	"No Sense", "Recovered Error", "Not Ready", "Medium Error",
@@ -1008,16 +1009,21 @@ int BootIdeReadSector(int nDriveIndex, void * pbBuffer, unsigned int block, int 
 		}
         }
 
+	traceRead = (!tsaHarddiskInfo[nDriveIndex].m_fAtapi && g_hddReadTraceCount < 96);
+	if (traceRead) {
+		printk("\nIDE#%d issue b=%X n=%d cmd=%02X", g_hddReadTraceCount, block, sectorCount, ideReadCommand);
+	}
+
 	if(BootIdeIssueAtaCommand(uIoBase, ideReadCommand, &tsicp))
 	{
 		printk("ide error %02X...\n", IoInputByte(IDE_REG_ERROR(uIoBase)));
 		return 1;
 	}
 
-	traceRead = 0;
 	if (traceRead) {
-		printk("\nB%X/%d", block, sectorCount);
+		printk(" ok");
 	}
+	g_hddReadTraceCount++;
 
 	bytesCopied = 0;
 	for (sectorIndex = 0; sectorIndex < sectorCount; sectorIndex++) {
